@@ -66,13 +66,19 @@ class AssemblyInstructions(Enum):
     BGE = 'bge'
     # bge X Y L -> ble Y X L
     BEQI = 'beqi'
+    # beqi #M X L -> beqi X #M L
     BNEI = 'bnei'
+    # bnei #M X L -> bnei X #M L
     BLTI = 'blti'
+    # blti #M X L -> bgti X #M L
     BLEI = 'blei'
     # blei X #M L -> blti X #M + 1 L
+    # blei #M X L -> bgti X #M - 1 L
     BGTI = 'bgti'
+    # bgti #M X L -> blti X #M L
     BGEI = 'bgei'
-    # bgei X #M L -> bgei X #M - 1 L
+    # bgei X #M L -> bgti X #M - 1 L
+    # bgei #M X L -> blti X #M + 1 L
     CALL = 'call'
     RET = 'ret'
     HALT = 'halt'

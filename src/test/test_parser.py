@@ -51,11 +51,23 @@ def test_instructions_type_ar():
 def test_instructions_type_b():
     parse('instructions_type_b')
 
+def test_instructions_type_c():
+    parse('instructions_type_c')
+
+def test_instructions_type_d():
+    parse('instructions_type_d')
+
+def test_instructions_type_dr():
+    parse('instructions_type_dr')
+
 def test_duplicate_label():
     parse('label_duplicate')
 
 def test_label_missing_colon():
     parse('label_missing_colon')
+
+def test_label_not_defined_by_end():
+    parse('label_not_defined_by_end')
 
 def test_labels():
     parse('labels')

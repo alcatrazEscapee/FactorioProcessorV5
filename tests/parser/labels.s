@@ -1,2 +1,7 @@
 example:
-label :
+    noop
+label:
+    noop
+    noop
+and_another:
+    noop

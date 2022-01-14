@@ -1,0 +1,15 @@
+-- Label Dump --
+a_label - 0
+TYPE_C
+BEQ
+ADDRESS_CONSTANT 0
+ADDRESS_CONSTANT 0
+LABEL 'b_label'
+TYPE_A
+ADD
+ADDRESS_CONSTANT 0
+ADDRESS_CONSTANT 0
+ADDRESS_CONSTANT 0
+ERROR Label used but not defined: 'b_label' on line 2:
+    beq r0 r0 b_label
+--------------------^

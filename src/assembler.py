@@ -318,6 +318,8 @@ class ParseToken(enum.IntEnum):
     IMMEDIATE_26 = enum.auto()
     IMMEDIATE_13 = enum.auto()
 
+    LABEL = enum.auto()
+
     EOF = enum.auto()
     ASSERT = enum.auto()
     ERROR = enum.auto()
@@ -416,6 +418,48 @@ class TypeBRInstruction(ParserInstruction):
         else:
             parser.push(ParseToken.TYPE_B, self.arg_immediate, *p1, *p2, ParseToken.IMMEDIATE_26, imm)
 
+class TypeCInstruction(ParserInstruction):
+    """ Two operand offset instruction, which references a label constant """
+
+    def __init__(self, opcode: ParseToken, reverse_operand_order: bool = False):
+        self.opcode = opcode
+        self.reverse_operand_order = reverse_operand_order
+
+    def parse(self, parser: 'Parser'):
+        p1, p2, label = parser.parse_address(), parser.parse_address(), parser.parse_label_reference()
+        if self.reverse_operand_order:
+            p1, p2 = p2, p1
+        parser.push(ParseToken.TYPE_C, self.opcode, *p1, *p2, ParseToken.LABEL, label)
+
+class TypeDInstruction(ParserInstruction):
+    """ One operand offset immediate, which references a label constant, with symmetric usage """
+
+    def __init__(self, opcode: ParseToken):
+        self.opcode = opcode
+
+    def parse(self, parser: 'Parser'):
+        p1, imm, _ = parser.parse_address_immediate26_pair()
+        label = parser.parse_label_reference()
+        parser.push(ParseToken.TYPE_D, self.opcode, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
+
+class TypeDRInstruction(ParserInstruction):
+    """ One operand offset immediate, which reference a label constant, with non-symmetric usage """
+
+    def __init__(self, arg_immediate: ParseToken, immediate_arg: ParseToken, immediate: Callable[['Parser', bool, int], int] = None):
+        self.arg_immediate = arg_immediate
+        self.immediate_arg = immediate_arg
+        self.immediate = immediate
+
+    def parse(self, parser: 'Parser'):
+        p1, imm, rev = parser.parse_address_immediate26_pair()
+        label = parser.parse_label_reference()
+        if self.immediate is not None:
+            imm = self.immediate(parser, rev, imm)
+        if rev:
+            parser.push(ParseToken.TYPE_D, self.immediate_arg, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
+        else:
+            parser.push(ParseToken.TYPE_D, self.arg_immediate, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
+
 
 class Parser:
 
@@ -464,6 +508,21 @@ class Parser:
         AssemblyInstructions.LEI: TypeBRInstruction(ParseToken.LTI, ParseToken.GTI, lambda p, rev, imm: p.check_interval(imm - 1 if rev else imm + 1, Parser.IMMEDIATE_SIGNED)),
         AssemblyInstructions.GTI: TypeBRInstruction(ParseToken.GTI, ParseToken.LTI),
         AssemblyInstructions.GEI: TypeBRInstruction(ParseToken.GTI, ParseToken.LTI, lambda p, rev, imm: p.check_interval(imm + 1 if rev else imm - 1, Parser.IMMEDIATE_SIGNED)),
+        # Type C
+        AssemblyInstructions.BEQ: TypeCInstruction(ParseToken.BEQ),
+        AssemblyInstructions.BNE: TypeCInstruction(ParseToken.BNE),
+        AssemblyInstructions.BLT: TypeCInstruction(ParseToken.BLT),
+        AssemblyInstructions.BGT: TypeCInstruction(ParseToken.BLT, True),
+        AssemblyInstructions.BLE: TypeCInstruction(ParseToken.BLE),
+        AssemblyInstructions.BGE: TypeCInstruction(ParseToken.BLE, True),
+        # Type D
+        AssemblyInstructions.BEQI: TypeDInstruction(ParseToken.BEQI),
+        AssemblyInstructions.BNEI: TypeDInstruction(ParseToken.BNEI),
+        # Type D-R
+        AssemblyInstructions.BLTI: TypeDRInstruction(ParseToken.BLTI, ParseToken.BGTI),
+        AssemblyInstructions.BLEI: TypeDRInstruction(ParseToken.BLTI, ParseToken.BGTI, lambda p, rev, imm: p.check_interval(imm - 1 if rev else imm + 1, Parser.IMMEDIATE_SIGNED)),
+        AssemblyInstructions.BGTI: TypeDRInstruction(ParseToken.BGTI, ParseToken.BLTI),
+        AssemblyInstructions.BGEI: TypeDRInstruction(ParseToken.BGTI, ParseToken.BLTI, lambda p, rev, imm: p.check_interval(imm + 1 if rev else imm - 1, Parser.IMMEDIATE_SIGNED)),
 
         # Special
         AssemblyInstructions.HALT: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.HALT)),
@@ -474,6 +533,10 @@ class Parser:
         AssemblyInstructions.SETI: CustomInstruction(lambda p: (ParseToken.TYPE_B, ParseToken.ADDI, *p.parse_address(), *Parser.R0, ParseToken.IMMEDIATE_26, p.parse_immediate26()))
 
     }.items()}
+
+    INSTRUCTION_TYPES = {
+        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E
+    }
 
     Token = Union[ParseToken, ParseError, int, str]
 
@@ -490,8 +553,9 @@ class Parser:
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
 
-        self.code_point: int = 0
+        self.code_point: int = 0  # Increment at start of instruction outputs
         self.labels: Dict[str, int] = {}  # 'foo: ' statements
+        self.undefined_labels: Dict[str, ParseError] = {}  # labels that have been referenced by an instruction but not defined yet, and the error referencing their first definition
         self.aliases: Dict[str, int] = {}  # 'alias' statements
         self.assert_mode: Literal['native', 'interpreted', 'none'] = assert_mode
 
@@ -540,6 +604,11 @@ class Parser:
                     break
                 else:
                     self.err('Unknown token: \'%s\'' % str(t))
+
+            # Check that all labels have been defined
+            for label, err in self.undefined_labels.items():
+                raise err
+
             self.expect(ScanToken.EOF)
             self.push(ParseToken.EOF)
             return True
@@ -553,7 +622,17 @@ class Parser:
             self.err('Duplicate label defined: ' + repr(label))
         self.pointer += 1
         self.expect(ScanToken.COLON, 'Expected \':\' after label identifier')
+        if label in self.undefined_labels:
+            del self.undefined_labels[label]
         self.labels[label] = self.code_point
+
+    def parse_label_reference(self):
+        self.expect(ScanToken.IDENTIFIER)
+        label = self.next()
+        if label not in self.labels and label not in self.undefined_labels:
+            self.undefined_labels[label] = self.make_err('Label used but not defined: \'%s\'' % label)
+        self.pointer += 1
+        return label
 
     def parse_alias(self):
         self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'alias\' keyword')
@@ -697,11 +776,16 @@ class Parser:
 
     def push(self, *tokens: 'Parser.Token'):
         for token in tokens:
+            if token in Parser.INSTRUCTION_TYPES:
+                self.code_point += 1
             self.output_tokens.append(token)
 
     def err(self, reason: str):
+        raise self.make_err(reason)
+
+    def make_err(self, reason: str) -> ParseError:
         safe_pointer = self.pointer - 1 if self.eof() else self.pointer
-        raise ParseError(reason, safe_pointer, self.input_tokens[safe_pointer])
+        return ParseError(reason, safe_pointer, self.input_tokens[safe_pointer])
 
 
 class CodeGen:
