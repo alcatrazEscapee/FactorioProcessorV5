@@ -2,10 +2,11 @@ from enum import IntEnum
 
 
 class Registers(IntEnum):
+    """ Named memory locations (registers) """
     SP = 1023
     RA = 1022
     RV = 1021
-    R0 = 0
+    R0 = 0  # Non-writable (always zero)
     R1 = 1
     R2 = 2
     R3 = 3

@@ -15,7 +15,7 @@ from constants.registers import Registers
 
 
 def main(args: argparse.Namespace):
-    input_text = read_file(args.file)
+    input_text = utils.read_file(args.file)
     scanner = Scanner(input_text)
     try:
         scanner.scan()
@@ -24,16 +24,15 @@ def main(args: argparse.Namespace):
         sys.exit(-1)
 
 
+def assemble(input_text: str):
+    pass
+
+
 def read_command_line_args():
     parser = argparse.ArgumentParser(description='Assembler for Factorio ProcessorV5 architecture')
 
     parser.add_argument('file', type=str, help='The assembly file to be compiled')
     return parser.parse_args()
-
-
-def read_file(file: str) -> str:
-    with open(file) as f:
-        return f.read()
 
 
 class ScanToken(enum.IntEnum):

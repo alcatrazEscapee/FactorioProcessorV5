@@ -1,19 +1,14 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
 
-from typing import List, Tuple, Dict, Callable
+from typing import List, Tuple, Dict, Callable, NamedTuple
 from constants.opcodes import Opcodes
+from constants.registers import Registers
 
 import utils
 
 
 class Processor:
-
-    # Marked memory locations
-    SP = 1023
-    RA = 1022
-    RV = 1021
-    R0 = 0
 
     def __init__(self, asserts: Dict[int, Tuple[int, int]] = None, assert_handle: Callable[['Processor'], None] = None):
         if asserts is None:
@@ -27,9 +22,9 @@ class Processor:
         self.running = False
         self.pc = 0
         self.pc_next = 0
+        self.error_code = 0
 
     def load(self, instructions: List[int]):
-        self.instructions = [0] * (1 << 12)
         for i, inst in enumerate(instructions):
             self.instructions[i] = inst
 
@@ -38,25 +33,23 @@ class Processor:
         self.pc = 0
         while self.running:
             ir = self.inst_get()
-            ir_opcode, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch = decode_ir(ir)
+            ir_data: IRData = decode_ir(ir)
             self.pc_next = self.pc + 1
-            inst = INSTRUCTIONS[ir_opcode]
-            inst.exec(self, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch)  # writes to memory
+            inst = INSTRUCTIONS[ir_data.opcode]
+            inst.exec(self, ir_data)  # writes to memory
             self.pc = self.pc_next  # writes to pc
-        print('Done')
 
     def branch_to(self, offset: int):
         self.pc_next = self.pc + offset
 
     def call(self, offset: int):
-        self.mem_set(Processor.RA, self.pc_next)
+        self.mem_set(Registers.RA, self.pc_next)
         self.pc_next = self.pc + offset
 
     def ret(self):
-        self.pc_next = self.mem_get(Processor.RA)
+        self.pc_next = self.mem_get(Registers.RA)
 
     def halt(self):
-        print('Halt')
         self.running = False
 
     def do_assert(self):
@@ -67,7 +60,7 @@ class Processor:
             self.running = False
 
     def error(self, code: int):
-        print('System Error: %d' % code)
+        self.error_code = code
         self.running = False
 
     def mem_get_operand(self, operand: int) -> int:
@@ -107,7 +100,7 @@ class Processor:
         Requires the singular 'write' channel
         """
         addr = addr & ((1 << 8) - 1)
-        if addr != Processor.R0:  # Deny writing to R0 (simulate non connection)
+        if addr != Registers.R0:  # Non-writable
             self.memory[addr] = value & utils.mask(32)
 
     def inst_get(self):
@@ -117,71 +110,96 @@ class Processor:
         return self.instructions[self.pc & utils.mask(12)]
 
 
+class IRData(NamedTuple):
+    opcode: int
+    imm26: int
+    op1: int
+    op2: int
+    op3: int
+    branch: int
+
+
+def decode_ir(ir: int) -> IRData:
+    return IRData(
+        utils.bitfield(ir, 58, 6),
+        utils.signed_bitfield(ir, 32, 26),
+        utils.bitfield(ir, 32, 16),
+        utils.bitfield(ir, 16, 16),
+        utils.bitfield(ir, 0, 16),
+        utils.signed_bitfield(ir, 0, 13)
+    )
+
+
+def decode_operand(operand: int) -> Tuple[int, int, int]:
+    return utils.bitfield(operand, 8, 8), utils.bitfield(operand, 7, 1), utils.signed_bitfield(operand, 0, 7)
+
+
 class Instruction:
 
-    def __init__(self, index: int):
-        self.index = index
+    def __init__(self, index: Opcodes):
+        self.opcode = index
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        pass
+    def exec(self, model: Processor, ir: IRData):
+        raise NotImplementedError
 
 
 class ArithmeticInstruction(Instruction):
-    def __init__(self, index: int, action: Callable[[int, int], int]):  # (Y, Z) -> X
+    def __init__(self, index: Opcodes, action: Callable[[int, int], int]):  # (Y, Z) -> X
         super().__init__(index)
         self.action = action
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        model.mem_set_operand(ir_op2, self.action(model.mem_get_operand(ir_op1), model.mem_get_operand(ir_op3)))
-
+    def exec(self, model: Processor, ir: IRData):
+        model.mem_set_operand(ir.op2, self.action(model.mem_get_operand(ir.op1), model.mem_get_operand(ir.op3)))
 
 class ArithmeticImmediateInstruction(Instruction):
-    def __init__(self, index: int, action: Callable[[int, int], int]):  # (Y, #Z) -> X
+    def __init__(self, index: Opcodes, action: Callable[[int, int], int]):  # (Y, #Z) -> X
         super().__init__(index)
         self.action = action
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        model.mem_set_operand(ir_op2, self.action(model.mem_get_operand(ir_op3), ir_imm26))
-
+    def exec(self, model: Processor, ir: IRData):
+        model.mem_set_operand(ir.op2, self.action(model.mem_get_operand(ir.op3), ir.imm26))
 
 class BranchInstruction(Instruction):
-    def __init__(self, index: int, comparator: Callable[[int, int], bool]):  # (X ? Y)
+    def __init__(self, index: Opcodes, comparator: Callable[[int, int], bool]):  # (X ? Y)
         super().__init__(index)
         self.comparator = comparator
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        if self.comparator(model.mem_get_operand(ir_op2), model.mem_get_operand(ir_op1)):
-            model.branch_to(ir_branch)
-
+    def exec(self, model: Processor, ir: IRData):
+        if self.comparator(model.mem_get_operand(ir.op2), model.mem_get_operand(ir.op1)):
+            model.branch_to(ir.branch)
 
 class BranchImmediateInstruction(Instruction):
-    def __init__(self, index: int, comparator: Callable[[int, int], bool]):  # (X ? #Y)
+    def __init__(self, index: Opcodes, comparator: Callable[[int, int], bool]):  # (X ? #Y)
         super().__init__(index)
         self.comparator = comparator
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        if self.comparator(model.mem_get_operand(ir_op2), ir_imm26):
-            model.branch_to(ir_branch)
-
+    def exec(self, model: Processor, ir: IRData):
+        if self.comparator(model.mem_get_operand(ir.op2), ir.imm26):
+            model.branch_to(ir.branch)
 
 class SpecialInstruction(Instruction):
-    def __init__(self, index: int, method: Callable[[Processor, int, int, int, int, int], None]):
+    def __init__(self, index: Opcodes, method: Callable[[Processor, IRData], None]):
         super().__init__(index)
         self.method = method
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        self.method(model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch)
-
+    def exec(self, model: Processor, ir: IRData):
+        self.method(model, ir)
 
 class InvalidInstruction(Instruction):
-    def __init__(self, error: int):
+    def __init__(self, error: Opcodes):
         super().__init__(error)
 
-    def exec(self, model: Processor, ir_imm26: int, ir_op1: int, ir_op2: int, ir_op3: int, ir_branch: int):
-        model.error(self.index)
+    def exec(self, model: Processor, ir: IRData):
+        model.error(self.opcode)
 
 
-INSTRUCTIONS: List[Instruction] = [
+def validate(*instructions: Instruction) -> Tuple[Instruction]:
+    for i, inst in enumerate(instructions):
+        assert i == inst.opcode.value
+    return instructions
+
+
+INSTRUCTIONS: Tuple[Instruction] = validate(
     ArithmeticInstruction(Opcodes.ADD, lambda y, z: y + z),
     ArithmeticInstruction(Opcodes.SUB, lambda y, z: y - z),
     ArithmeticInstruction(Opcodes.MUL, lambda y, z: y * z),
@@ -231,17 +249,8 @@ INSTRUCTIONS: List[Instruction] = [
     BranchImmediateInstruction(Opcodes.BNEI, lambda x, y: x != y),
     BranchImmediateInstruction(Opcodes.BLTI, lambda x, y: x < y),
     BranchImmediateInstruction(Opcodes.BGTI, lambda x, y: x > y),
-    SpecialInstruction(Opcodes.CALL, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.call()),
-    SpecialInstruction(Opcodes.RET, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.ret()),
-    SpecialInstruction(Opcodes.HALT, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.halt()),
-    SpecialInstruction(Opcodes.ASSERT, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.do_assert())
-]
-
-
-def decode_ir(ir: int) -> Tuple[int, int, int, int, int, int]:
-    return utils.bitfield(ir, 58, 6), utils.signed_bitfield(ir, 32, 26), utils.bitfield(ir, 32, 16), utils.bitfield(ir, 16, 16), utils.bitfield(ir, 0, 16), utils.signed_bitfield(ir, 0, 13)
-
-
-def decode_operand(operand: int) -> Tuple[int, int, int]:
-    return utils.bitfield(operand, 8, 8), utils.bitfield(operand, 7, 1), utils.signed_bitfield(operand, 0, 7)
-
+    SpecialInstruction(Opcodes.CALL, lambda model, ir: model.call(ir.branch)),
+    SpecialInstruction(Opcodes.RET, lambda model, _: model.ret()),
+    SpecialInstruction(Opcodes.HALT, lambda model, _: model.halt()),
+    SpecialInstruction(Opcodes.ASSERT, lambda model, _: model.do_assert())
+)

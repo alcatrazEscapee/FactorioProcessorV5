@@ -1,5 +1,7 @@
+import utils
 import assembler
 import testfixtures
+
 
 TEST_DIR = '../../tests/scanner/'
 
@@ -49,11 +51,11 @@ def test_unknown_token():
     scan('unknown_token')
 
 def scan(file: str):
-    scan_text = assembler.read_file(TEST_DIR + file + '.s')
+    scan_text = utils.read_file(TEST_DIR + file + '.s')
     scanner = assembler.Scanner(scan_text)
     scanner.scan()
     scanner.trace(TEST_DIR + file + '.out')
-    actual_text = assembler.read_file(TEST_DIR + file + '.out')
-    expected_text = assembler.read_file(TEST_DIR + file + '.trace')
+    actual_text = utils.read_file(TEST_DIR + file + '.out')
+    expected_text = utils.read_file(TEST_DIR + file + '.trace')
 
     testfixtures.compare(expected=expected_text, actual=actual_text)

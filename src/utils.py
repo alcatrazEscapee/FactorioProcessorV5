@@ -75,3 +75,8 @@ def interval_bitfield(bits: int, signed: bool) -> Interval:
     else:
         bound = 1 << bits
         return Interval(0, bound - 1, 'Value %s outside of range [0, %d] for %d-bit unsigned field' % ('%d', bound - 1, bits))
+
+
+def read_file(file: str) -> str:
+    with open(file) as f:
+        return f.read()
