@@ -8,6 +8,20 @@ from constants.registers import Registers
 import utils
 
 
+class IRData(NamedTuple):
+    opcode: int
+    imm26: int
+    op1: int
+    op2: int
+    op3: int
+    branch: int
+
+class OperandData(NamedTuple):
+    addr: int
+    offset: int
+    indirect: int
+
+
 class Processor:
 
     def __init__(self, asserts: Dict[int, Tuple[int, int]] = None, assert_handle: Callable[['Processor'], None] = None):
@@ -68,10 +82,10 @@ class Processor:
         Perform a memory access using an instruction operand
         Requires two 'read' channels in order to account for offset
         """
-        operand_addr, operand_indirect, operand_offset = decode_operand(operand)
-        value = self.mem_get(operand_addr)
-        if operand_indirect == 1:
-            return self.mem_get(value + operand_offset)
+        op = decode_operand(operand)
+        value = self.mem_get(op.addr)
+        if op.indirect == 1:
+            return self.mem_get(value + op.offset)
         else:
             return value
 
@@ -87,19 +101,19 @@ class Processor:
         Perform a memory write using an instruction operand
         Requires a 'read' channel and the singular 'write' channel
         """
-        operand_addr, operand_indirect, operand_offset = decode_operand(operand)
-        if operand_indirect:
-            indirect = self.mem_get(operand_addr)
-            self.mem_set(indirect + operand_offset, value)
+        op = decode_operand(operand)
+        if op.indirect:
+            indirect = self.mem_get(op.addr)
+            self.mem_set(indirect + op.offset, value)
         else:
-            self.mem_set(operand_addr, value)
+            self.mem_set(op.addr, value)
 
     def mem_set(self, addr: int, value: int):
         """
         Perform a direct memory write
         Requires the singular 'write' channel
         """
-        addr = addr & ((1 << 8) - 1)
+        addr = addr & utils.mask(8)
         if addr != Registers.R0:  # Non-writable
             self.memory[addr] = value & utils.mask(32)
 
@@ -110,15 +124,6 @@ class Processor:
         return self.instructions[self.pc & utils.mask(12)]
 
 
-class IRData(NamedTuple):
-    opcode: int
-    imm26: int
-    op1: int
-    op2: int
-    op3: int
-    branch: int
-
-
 def decode_ir(ir: int) -> IRData:
     return IRData(
         utils.bitfield(ir, 58, 6),
@@ -126,12 +131,16 @@ def decode_ir(ir: int) -> IRData:
         utils.bitfield(ir, 32, 16),
         utils.bitfield(ir, 16, 16),
         utils.bitfield(ir, 0, 16),
-        utils.signed_bitfield(ir, 0, 13)
+        utils.signed_bitfield(ir, 16, 16)
     )
 
 
-def decode_operand(operand: int) -> Tuple[int, int, int]:
-    return utils.bitfield(operand, 8, 8), utils.bitfield(operand, 7, 1), utils.signed_bitfield(operand, 0, 7)
+def decode_operand(operand: int) -> OperandData:
+    return OperandData(
+        utils.bitfield(operand, 6, 10),
+        utils.signed_bitfield(operand, 1, 5),
+        utils.bit(operand, 0)
+    )
 
 
 class Instruction:
@@ -165,7 +174,7 @@ class BranchInstruction(Instruction):
         self.comparator = comparator
 
     def exec(self, model: Processor, ir: IRData):
-        if self.comparator(model.mem_get_operand(ir.op2), model.mem_get_operand(ir.op1)):
+        if self.comparator(model.mem_get_operand(ir.op3), model.mem_get_operand(ir.op1)):
             model.branch_to(ir.branch)
 
 class BranchImmediateInstruction(Instruction):
@@ -174,7 +183,7 @@ class BranchImmediateInstruction(Instruction):
         self.comparator = comparator
 
     def exec(self, model: Processor, ir: IRData):
-        if self.comparator(model.mem_get_operand(ir.op2), ir.imm26):
+        if self.comparator(model.mem_get_operand(ir.op3), ir.imm26):
             model.branch_to(ir.branch)
 
 class SpecialInstruction(Instruction):
@@ -195,7 +204,7 @@ class InvalidInstruction(Instruction):
 
 def validate(*instructions: Instruction) -> Tuple[Instruction]:
     for i, inst in enumerate(instructions):
-        assert i == inst.opcode.value
+        assert i == inst.opcode.value, 'Validation Problem: Instruction %s has opcode %s but is at index %d' % (type(inst), repr(inst.opcode), i)
     return instructions
 
 
@@ -234,13 +243,13 @@ INSTRUCTIONS: Tuple[Instruction] = validate(
     ArithmeticImmediateInstruction(Opcodes.XORI, lambda y, imm: y ^ imm),
     ArithmeticImmediateInstruction(Opcodes.XNORI, lambda y, imm: utils.invert(y ^ imm, 32)),
     ArithmeticImmediateInstruction(Opcodes.LSI, lambda y, imm: y << imm),
-    ArithmeticImmediateInstruction(Opcodes.LSIR, lambda y, imm: imm << y),
     ArithmeticImmediateInstruction(Opcodes.RSI, lambda y, imm: y >> imm),
+    ArithmeticImmediateInstruction(Opcodes.LSIR, lambda y, imm: imm << y),
     ArithmeticImmediateInstruction(Opcodes.RSIR, lambda y, imm: imm >> y),
-    ArithmeticImmediateInstruction(Opcodes.EQ, lambda y, imm: int(y == imm)),
-    ArithmeticImmediateInstruction(Opcodes.NE, lambda y, imm: int(y != imm)),
-    ArithmeticImmediateInstruction(Opcodes.LT, lambda y, imm: int(y < imm)),
-    ArithmeticImmediateInstruction(Opcodes.LE, lambda y, imm: int(y <= imm)),
+    ArithmeticImmediateInstruction(Opcodes.EQI, lambda y, imm: int(y == imm)),
+    ArithmeticImmediateInstruction(Opcodes.NEI, lambda y, imm: int(y != imm)),
+    ArithmeticImmediateInstruction(Opcodes.LTI, lambda y, imm: int(y < imm)),
+    ArithmeticImmediateInstruction(Opcodes.GTI, lambda y, imm: int(y > imm)),
     BranchInstruction(Opcodes.BEQ, lambda x, y: x == y),
     BranchInstruction(Opcodes.BNE, lambda x, y: x != y),
     BranchInstruction(Opcodes.BLT, lambda x, y: x < y),

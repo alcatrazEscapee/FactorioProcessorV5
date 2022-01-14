@@ -14,25 +14,52 @@ from constants.instructions import AssemblyInstructions
 from constants.registers import Registers
 
 
-def main(args: argparse.Namespace):
-    input_text = utils.read_file(args.file)
-    scanner = Scanner(input_text)
-    try:
-        scanner.scan()
-    except ScanError as e:
-        print('Error during scan phase\n' + str(e))
-        sys.exit(-1)
-
-
-def assemble(input_text: str):
-    pass
-
-
 def read_command_line_args():
     parser = argparse.ArgumentParser(description='Assembler for Factorio ProcessorV5 architecture')
 
     parser.add_argument('file', type=str, help='The assembly file to be compiled')
     return parser.parse_args()
+
+def main(args: argparse.Namespace):
+    input_text = utils.read_file(args.file)
+    asm = Assembler(input_text)
+    if not asm.assemble():
+        print(asm.error)
+        sys.exit(1)
+
+    with open(args.file + '.o', 'wb') as f:
+        for c in asm.code:
+            f.write(c.to_bytes(8, byteorder='big'))
+
+
+class Assembler:
+
+    def __init__(self, input_text: str, assert_mode: Literal['native', 'interpreted', 'none'] = 'none'):
+        self.input_text = input_text
+        self.assert_mode = assert_mode
+
+        self.code: Optional[List[int]] = None
+        self.asserts: Optional[Dict[int, Tuple[int, int]]] = None
+        self.error: Optional[str] = None
+
+    def assemble(self) -> bool:
+        scanner = Scanner(self.input_text)
+        if not scanner.scan():
+            self.error = 'Scanner error:\n%s' % scanner.error
+            return False
+
+        parser = Parser(scanner.output_tokens, self.assert_mode)
+        if not parser.parse():
+            parser.error.trace(scanner)
+            self.error = 'Parser error:\n%s' % parser.error
+            return False
+
+        codegen = CodeGen(parser.output_tokens, parser.labels)
+        codegen.gen()
+
+        self.code = codegen.output_code
+        self.asserts = codegen.asserts
+        return True
 
 
 class ScanToken(enum.IntEnum):
@@ -97,6 +124,7 @@ class Scanner:
         self.output_tokens: List[Scanner.Token] = []
         self.locations: List[Tuple[int, int]] = []
         self.line_num: int = 0
+        self.error: Optional[ScanError] = None
 
     def trace(self, file: str):
         with open(file, 'w') as f:
@@ -122,6 +150,7 @@ class Scanner:
             return True
         except ScanError as e:
             self.push(ScanToken.ERROR, e)
+            self.error = e
             return False
 
     def scan_token(self):
@@ -558,6 +587,8 @@ class Parser:
         self.aliases: Dict[str, int] = {}  # 'alias' statements
         self.assert_mode: Literal['native', 'interpreted', 'none'] = assert_mode
 
+        self.error: Optional[ParseError] = None
+
     def trace(self, file: str, scanner: Scanner):
         with open(file, 'w') as f:
             if self.labels:
@@ -613,6 +644,7 @@ class Parser:
             return True
         except ParseError as e:
             self.push(ParseToken.ERROR, e)
+            self.error = e
             return False
 
     def parse_label(self):
@@ -789,16 +821,12 @@ class Parser:
 
 class CodeGen:
 
-    def __init__(self, tokens: List[Parser.Token]):
+    def __init__(self, tokens: List[Parser.Token], labels: Dict[str, int]):
         self.input_tokens = tokens
+        self.labels = labels
         self.output_code: List[int] = []
         self.asserts: Dict[int, Tuple[int, int]] = {}
         self.pointer = 0
-
-    def trace(self, file: str):
-        with open(file, 'w') as f:
-            for i, code in enumerate(self.output_code):
-                f.write('%04d | %s %s\n' % (i, format(code >> 32, '032b'), format(code & utils.mask(32), '032b')))
 
     def gen(self):
         while not self.eof():
@@ -810,12 +838,16 @@ class CodeGen:
                 self.pointer += 1
                 self.gen_type_b()
             elif t == ParseToken.TYPE_C:
+                self.pointer += 1
                 raise NotImplementedError
             elif t == ParseToken.TYPE_D:
-                raise NotImplementedError
+                self.pointer += 1
+                self.gen_type_d()
             elif t == ParseToken.TYPE_E:
-                raise NotImplementedError
+                self.pointer += 1
+                self.gen_type_e()
             elif t == ParseToken.ASSERT:
+                self.pointer += 1
                 self.gen_assert()
             else:
                 break
@@ -825,15 +857,31 @@ class CodeGen:
 
     def gen_type_a(self):
         # [Opcode - 6b][Unused - 10b][Operand 1 - 16b] | [Operand 2 - 16b][Operand 3 - 16b]
+        # op X Y Z -> X = 2, Y = 1, Z = 3
         opcode = self.gen_opcode()
         p1, p2, p3 = self.gen_address(), self.gen_address(), self.gen_address()
-        self.output_code.append((opcode << 58) | (p1 << 32) | (p2 << 16) | (p3 << 0))
+        self.output_code.append((opcode << 58) | (p2 << 32) | (p1 << 16) | (p3 << 0))
 
     def gen_type_b(self):
         # [Opcode - 6b][Immediate - 26b] | [Operand 2 - 16b][Operand 3 - 16b]
         opcode = self.gen_opcode()
         p1, p2, imm = self.gen_address(), self.gen_address(), self.gen_immediate26()
         self.output_code.append((opcode << 58) | (imm << 32) | (p1 << 16) | (p2 << 0))
+
+    def gen_type_d(self):
+        # [Opcode - 6b][Immediate - 26b] | [Branch Offset - 16b][Operand 3 - 16b]
+        opcode = self.gen_opcode()
+        p1, imm, offset = self.gen_address(), self.gen_immediate26(), self.gen_branch_target()
+        self.output_code.append((opcode << 58) | (imm << 32) | (offset << 16) | (p1 << 0))
+
+    def gen_type_e(self):
+        # Special
+        opcode = self.gen_opcode()
+        spec = Opcodes(opcode)
+        if spec == Opcodes.HALT or spec == Opcodes.RET:
+            self.output_code.append(opcode << 58)
+        else:
+            raise NotImplementedError
 
     def gen_assert(self):
         # Interpreted assert - output the assert data to a different stream and just output a single 'assert' instruction to code
@@ -857,6 +905,14 @@ class CodeGen:
         else:
             self.err()
 
+    def gen_branch_target(self) -> int:
+        t: ParseToken = self.take()
+        if t == ParseToken.LABEL:
+            label: str = self.take()
+            branch_point = self.labels[label]
+            code_point = len(self.output_code)
+            return utils.to_signed_bitfield(branch_point - code_point, 16, 0)
+
     def gen_immediate26(self) -> int:
         t: ParseToken = self.take()
         if t == ParseToken.IMMEDIATE_26:
@@ -877,7 +933,12 @@ class CodeGen:
         return self.pointer >= len(self.input_tokens)
 
     def err(self):
-        raise AssertionError('Code gen in inoperable state. At: ' + str(self.input_tokens[self.pointer:]))
+        raise AssertionError('\n'.join([
+            'Code gen in inoperable state:',
+            'Last     : ' + str(self.input_tokens[self.pointer - 1::-1]),
+            'Next     : ' + str(self.next()),
+            'Incoming : ' + str(self.input_tokens[self.pointer + 1:])
+        ]))
 
     def take(self) -> Parser.Token:
         t = self.next()

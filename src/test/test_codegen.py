@@ -1,5 +1,7 @@
 import utils
 import assembler
+import dissasembler
+import testfixtures
 
 TEST_DIR = '../../tests/codegen/'
 
@@ -9,7 +11,6 @@ def test_arithmetic1():
 
 def test_empty():
     gen('empty')
-
 
 def gen(file: str):
     scan_text = utils.read_file(TEST_DIR + file + '.s')
@@ -21,11 +22,9 @@ def gen(file: str):
 
     assert parser.parse()
 
-    codegen = assembler.CodeGen(parser.output_tokens)
-
+    codegen = assembler.CodeGen(parser.output_tokens, parser.labels)
     codegen.gen()
-    codegen.trace(TEST_DIR + file + '.out')
-    actual_text = utils.read_file(TEST_DIR + file + '.out')
+    actual_text = '\n'.join(dissasembler.decode(codegen.output_code))
     expected_text = utils.read_file(TEST_DIR + file + '.trace')
 
-    assert expected_text == actual_text
+    testfixtures.compare(actual=actual_text, expected=expected_text)
