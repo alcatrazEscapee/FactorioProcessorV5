@@ -1,32 +1,37 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
 
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Dict, Callable
 from constants.opcodes import Opcodes
 
-
-def main():
-    model = Processor()
-    model.instructions[0] = 0b010010_00000000000000000000000001_0000000100000000_0000000100000000
-    model.instructions[1] = 0b110111_00000000000000000000000000_00000000000000000000000000000000
-    model.run()
+import utils
 
 
 class Processor:
 
     # Marked memory locations
-    SP = 255
-    RA = 254
-    RV = 253
+    SP = 1023
+    RA = 1022
+    RV = 1021
     R0 = 0
 
-    def __init__(self):
-        self.memory = [0] * (1 << 8)  # 256 x 32b
+    def __init__(self, asserts: Dict[int, Tuple[int, int]] = None, assert_handle: Callable[['Processor'], None] = None):
+        if asserts is None:
+            asserts = {}
+
+        self.memory = [0] * (1 << 10)  # 256 x 32b
         self.instructions = [0] * (1 << 12)  # 4096 x 64b
+        self.asserts = asserts
+        self.assert_handle = assert_handle
 
         self.running = False
         self.pc = 0
         self.pc_next = 0
+
+    def load(self, instructions: List[int]):
+        self.instructions = [0] * (1 << 12)
+        for i, inst in enumerate(instructions):
+            self.instructions[i] = inst
 
     def run(self):
         self.running = True
@@ -54,6 +59,13 @@ class Processor:
         print('Halt')
         self.running = False
 
+    def do_assert(self):
+        addr, expected = self.asserts[self.pc]
+        actual = self.mem_get_operand(addr)
+        if actual != expected:
+            self.assert_handle(self)
+            self.running = False
+
     def error(self, code: int):
         print('System Error: %d' % code)
         self.running = False
@@ -75,7 +87,7 @@ class Processor:
         Perform a direct memory access
         Requires one 'read' channel
         """
-        return self.memory[addr & mask(8)]
+        return self.memory[addr & utils.mask(8)]
 
     def mem_set_operand(self, operand: int, value: int):
         """
@@ -96,13 +108,13 @@ class Processor:
         """
         addr = addr & ((1 << 8) - 1)
         if addr != Processor.R0:  # Deny writing to R0 (simulate non connection)
-            self.memory[addr] = value & mask(32)
+            self.memory[addr] = value & utils.mask(32)
 
     def inst_get(self):
         """
         Perform an instruction read
         """
-        return self.instructions[self.pc & mask(12)]
+        return self.instructions[self.pc & utils.mask(12)]
 
 
 class Instruction:
@@ -178,10 +190,10 @@ INSTRUCTIONS: List[Instruction] = [
     ArithmeticInstruction(Opcodes.MOD, lambda y, z: y % z),
     ArithmeticInstruction(Opcodes.AND, lambda y, z: y & z),
     ArithmeticInstruction(Opcodes.OR, lambda y, z: y | z),
-    ArithmeticInstruction(Opcodes.NAND, lambda y, z: invert(y & z, 32)),
-    ArithmeticInstruction(Opcodes.NOR, lambda y, z: invert(y | z, 32)),
+    ArithmeticInstruction(Opcodes.NAND, lambda y, z: utils.invert(y & z, 32)),
+    ArithmeticInstruction(Opcodes.NOR, lambda y, z: utils.invert(y | z, 32)),
     ArithmeticInstruction(Opcodes.XOR, lambda y, z: y ^ z),
-    ArithmeticInstruction(Opcodes.XNOR, lambda y, z: invert(y ^ z, 32)),
+    ArithmeticInstruction(Opcodes.XNOR, lambda y, z: utils.invert(y ^ z, 32)),
     ArithmeticInstruction(Opcodes.LS, lambda y, z: y << z),
     ArithmeticInstruction(Opcodes.RS, lambda y, z: y >> z),
     ArithmeticInstruction(Opcodes.EQ, lambda y, z: int(y == z)),
@@ -195,89 +207,41 @@ INSTRUCTIONS: List[Instruction] = [
     ArithmeticImmediateInstruction(Opcodes.DIVIR, lambda y, imm: imm / y),
     ArithmeticImmediateInstruction(Opcodes.POWI, lambda y, imm: y ** imm),
     ArithmeticImmediateInstruction(Opcodes.POWIR, lambda y, imm: imm ** y),
-    ArithmeticImmediateInstruction(25, lambda y, imm: y % imm),
-    ArithmeticImmediateInstruction(26, lambda y, imm: imm % y),
-    ArithmeticImmediateInstruction(27, lambda y, imm: y & imm),
-    ArithmeticImmediateInstruction(28, lambda y, imm: y | imm),
-    ArithmeticImmediateInstruction(29, lambda y, imm: invert(y & imm, 32)),
-    ArithmeticImmediateInstruction(30, lambda y, imm: invert(y | imm, 32)),
-    ArithmeticImmediateInstruction(31, lambda y, imm: y ^ imm),
-    ArithmeticImmediateInstruction(32, lambda y, imm: invert(y ^ imm, 32)),
-    ArithmeticImmediateInstruction(33, lambda y, imm: y << imm),
-    ArithmeticImmediateInstruction(34, lambda y, imm: imm << y),
-    ArithmeticImmediateInstruction(35, lambda y, imm: y >> imm),
-    ArithmeticImmediateInstruction(36, lambda y, imm: imm >> y),
-    ArithmeticImmediateInstruction(37, lambda y, imm: int(y == imm)),
-    ArithmeticImmediateInstruction(38, lambda y, imm: int(y != imm)),
-    ArithmeticImmediateInstruction(39, lambda y, imm: int(y < imm)),
-    ArithmeticImmediateInstruction(40, lambda y, imm: int(y > imm)),
-    BranchInstruction(41, lambda x, y: x == y),
-    BranchInstruction(42, lambda x, y: x != y),
-    BranchInstruction(43, lambda x, y: x < y),
-    BranchInstruction(44, lambda x, y: x <= y),
-    BranchImmediateInstruction(45, lambda x, y: x == y),
-    BranchImmediateInstruction(46, lambda x, y: x != y),
-    BranchImmediateInstruction(47, lambda x, y: x < y),
-    BranchImmediateInstruction(48, lambda x, y: x > y),
-    SpecialInstruction(49, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.call()),
-    SpecialInstruction(50, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.ret()),
-    SpecialInstruction(51, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.halt()),
-    InvalidInstruction(52),
-    InvalidInstruction(53),
-    InvalidInstruction(54),
-    InvalidInstruction(55),
-    InvalidInstruction(56),
-    InvalidInstruction(57),
-    InvalidInstruction(58),
-    InvalidInstruction(59),
-    InvalidInstruction(60),
-    InvalidInstruction(61),
-    InvalidInstruction(62),
-    InvalidInstruction(63)
+    ArithmeticImmediateInstruction(Opcodes.MODI, lambda y, imm: y % imm),
+    ArithmeticImmediateInstruction(Opcodes.MODIR, lambda y, imm: imm % y),
+    ArithmeticImmediateInstruction(Opcodes.ANDI, lambda y, imm: y & imm),
+    ArithmeticImmediateInstruction(Opcodes.ORI, lambda y, imm: y | imm),
+    ArithmeticImmediateInstruction(Opcodes.NANDI, lambda y, imm: utils.invert(y & imm, 32)),
+    ArithmeticImmediateInstruction(Opcodes.NORI, lambda y, imm: utils.invert(y | imm, 32)),
+    ArithmeticImmediateInstruction(Opcodes.XORI, lambda y, imm: y ^ imm),
+    ArithmeticImmediateInstruction(Opcodes.XNORI, lambda y, imm: utils.invert(y ^ imm, 32)),
+    ArithmeticImmediateInstruction(Opcodes.LSI, lambda y, imm: y << imm),
+    ArithmeticImmediateInstruction(Opcodes.LSIR, lambda y, imm: imm << y),
+    ArithmeticImmediateInstruction(Opcodes.RSI, lambda y, imm: y >> imm),
+    ArithmeticImmediateInstruction(Opcodes.RSIR, lambda y, imm: imm >> y),
+    ArithmeticImmediateInstruction(Opcodes.EQ, lambda y, imm: int(y == imm)),
+    ArithmeticImmediateInstruction(Opcodes.NE, lambda y, imm: int(y != imm)),
+    ArithmeticImmediateInstruction(Opcodes.LT, lambda y, imm: int(y < imm)),
+    ArithmeticImmediateInstruction(Opcodes.LE, lambda y, imm: int(y <= imm)),
+    BranchInstruction(Opcodes.BEQ, lambda x, y: x == y),
+    BranchInstruction(Opcodes.BNE, lambda x, y: x != y),
+    BranchInstruction(Opcodes.BLT, lambda x, y: x < y),
+    BranchInstruction(Opcodes.BLE, lambda x, y: x <= y),
+    BranchImmediateInstruction(Opcodes.BEQI, lambda x, y: x == y),
+    BranchImmediateInstruction(Opcodes.BNEI, lambda x, y: x != y),
+    BranchImmediateInstruction(Opcodes.BLTI, lambda x, y: x < y),
+    BranchImmediateInstruction(Opcodes.BGTI, lambda x, y: x > y),
+    SpecialInstruction(Opcodes.CALL, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.call()),
+    SpecialInstruction(Opcodes.RET, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.ret()),
+    SpecialInstruction(Opcodes.HALT, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.halt()),
+    SpecialInstruction(Opcodes.ASSERT, lambda model, ir_imm26, ir_op1, ir_op2, ir_op3, ir_branch: model.do_assert())
 ]
 
 
 def decode_ir(ir: int) -> Tuple[int, int, int, int, int, int]:
-    return bitfield(ir, 58, 6), signed_bitfield(ir, 32, 26), bitfield(ir, 32, 16), bitfield(ir, 16, 16), bitfield(ir, 0, 16), signed_bitfield(ir, 0, 13)
+    return utils.bitfield(ir, 58, 6), utils.signed_bitfield(ir, 32, 26), utils.bitfield(ir, 32, 16), utils.bitfield(ir, 16, 16), utils.bitfield(ir, 0, 16), utils.signed_bitfield(ir, 0, 13)
 
 
 def decode_operand(operand: int) -> Tuple[int, int, int]:
-    return bitfield(operand, 8, 8), bitfield(operand, 7, 1), signed_bitfield(operand, 0, 7)
+    return utils.bitfield(operand, 8, 8), utils.bitfield(operand, 7, 1), utils.signed_bitfield(operand, 0, 7)
 
-
-def sign(x: int, bits: int) -> int:
-    # Converts a two's compliment encoded value to a signed integer value
-    sign_bit = bit(x, bits - 1)
-    if sign_bit == 1:
-        return x - (1 << bits)
-    else:
-        return x
-
-
-def invert(x: int, bits: int) -> int:
-    # Applies a binary NOT on the first N bits of x
-    return x ^ mask(bits)
-
-
-def mask(bits: int):
-    # Returns the value 0b11...1 with N ones
-    return (1 << bits) - 1
-
-
-def bit(x: int, index: int):
-    # Returns the Nth bit of x
-    return (x >> index) & 1
-
-
-def signed_bitfield(value: int, index: int, bits: int):
-    # Returns the bits-length bit field of x, with an offset of index from the LSB, decoded into a signed integer from a two's compliment representation
-    return sign(bitfield(value, index, bits), bits)
-
-
-def bitfield(x: int, index: int, bits: int):
-    # Returns the bits-length bit field of x, with an offset of index from the LSB
-    return (x >> index) & mask(bits)
-
-
-if __name__ == '__main__':
-    main()

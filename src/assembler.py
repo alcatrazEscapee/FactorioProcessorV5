@@ -6,11 +6,12 @@ import enum
 import utils
 import argparse
 
-from typing import Union, Tuple, List, Optional, Sequence, Dict, Callable
+from typing import Union, Tuple, List, Optional, Sequence, Dict, Callable, Literal
 
 from utils import Interval
 from constants.opcodes import Opcodes
 from constants.instructions import AssemblyInstructions
+from constants.registers import Registers
 
 
 def main(args: argparse.Namespace):
@@ -71,8 +72,8 @@ class Scanner:
     IDENTIFIER_START = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_')
     NUMERIC = set('0123456789')
     IDENTIFIER = IDENTIFIER_START | NUMERIC
-    INSTRUCTIONS = {'add', 'sub', 'mul', 'div', 'pow', 'mod', 'and', 'or', 'nand', 'nor', 'xor', 'xnor', 'ls', 'rs', 'eq', 'ne', 'lt', 'le', 'addi', 'subir', 'muli', 'divi', 'divir', 'powi', 'powir', 'modir', 'andi', 'andi', 'ori', 'nandi', 'nori', 'xori', 'xnori', 'lsi', 'lsir', 'rsi', 'rsir', 'eqi', 'nei', 'lti', 'lei', 'gti', 'gei', 'beq', 'bne', 'blt', 'ble', 'beqi', 'bnei', 'blti', 'blei', 'bgti', 'bgei', 'call', 'ret', 'halt', 'set', 'seti', 'subi', 'gt', 'ge', 'bgt', 'bge'}
-    REGISTERS = {'sp', 'ra', 'r0', 'r1', 'r2', 'r3', 'r5', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15', 'r16'}
+    INSTRUCTIONS = {i.value for i in AssemblyInstructions}
+    REGISTERS = {i.name.lower() for i in Registers}
     KEYWORDS = {
         'alias': ScanToken.ALIAS,
         'assert': ScanToken.ASSERT
@@ -426,8 +427,6 @@ class Parser:
 
     }.items()}
 
-    REGISTERS = {'sp': 1023, 'ra': 1022, 'rv': 1021, 'r0': 0, 'r1': 1, 'r2': 2, 'r3': 3, 'r4': 4, 'r5': 5, 'r6': 6, 'r7': 7, 'r8': 8, 'r9': 9, 'r10': 10, 'r11': 11, 'r12': 12, 'r13': 13, 'r14': 14, 'r15': 15, 'r16': 16}
-
     Token = Union[ParseToken, ParseError, int, str]
 
     ADDRESS: Interval = utils.interval_bitfield(10, False)
@@ -438,7 +437,7 @@ class Parser:
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
-    def __init__(self, tokens: List['Scanner.Token'], native_asserts: bool = False):
+    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none'):
         self.input_tokens: List['Scanner.Token'] = tokens
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
@@ -446,7 +445,7 @@ class Parser:
         self.code_point: int = 0
         self.labels: Dict[str, int] = {}  # 'foo: ' statements
         self.aliases: Dict[str, int] = {}  # 'alias' statements
-        self.native_asserts = native_asserts
+        self.assert_mode: Literal['native', 'interpreted', 'none'] = assert_mode
 
     def trace(self, file: str, scanner: Scanner):
         with open(file, 'w') as f:
@@ -521,15 +520,19 @@ class Parser:
         p1 = self.parse_address()
         self.expect(ScanToken.EQUALS, 'Expected \'=\' after \'assert <address>\' statement')
         value = self.parse_int(Parser.VALUE)
-        if self.native_asserts:
-            # assert A == #V is transpiled to native code, but this only supports 26-bit immediate values
+        if self.assert_mode == 'native':
+            # assert A = #V is transpiled to native code, but this only supports 26-bit immediate values
             # bne A #V assert_label_1
             # halt ERROR_ASSERT_FAILED
             # assert_label_1:
             raise NotImplementedError
-        else:
-            # Output the assert tokens to be consumed or ignored by the next stage
+        elif self.assert_mode == 'interpreted':
+            # assert A == #V is transpiled to a single 'assert' instruction, which is otherwise a noop instruction
+            # This is passed onto the codegen as an 'assert'
             self.push(ParseToken.ASSERT, *p1, ParseToken.IMMEDIATE_32, value)
+        elif self.assert_mode == 'none':
+            # Asserts are not outputted to the next stage
+            pass
 
     def parse_instruction(self):
         opcode = self.next()
@@ -568,7 +571,7 @@ class Parser:
                 self.pointer += 1
                 reg = self.take()
                 offset = self.parse_optional_address_offset()
-                return ParseToken.ADDRESS_INDIRECT, Parser.REGISTERS[reg], offset
+                return ParseToken.ADDRESS_INDIRECT, Registers[reg.upper()].value, offset
             else:
                 # Constant
                 base = self.parse_address_base()
@@ -578,7 +581,7 @@ class Parser:
             # No offset, as @r.i is just @r+i
             self.pointer += 1
             reg = self.take()
-            return ParseToken.ADDRESS_CONSTANT, Parser.REGISTERS[reg]
+            return ParseToken.ADDRESS_CONSTANT, Registers[reg.upper()].value
         else:
             self.err('Address must start with indirect or a named register.')
 
@@ -653,12 +656,12 @@ class Parser:
         raise ParseError(reason, safe_pointer, self.input_tokens[safe_pointer])
 
 
-
 class CodeGen:
 
     def __init__(self, tokens: List[Parser.Token]):
         self.input_tokens = tokens
-        self.output_code = []
+        self.output_code: List[int] = []
+        self.asserts: Dict[int, Tuple[int, int]] = {}
         self.pointer = 0
 
     def trace(self, file: str):
@@ -682,11 +685,12 @@ class CodeGen:
             elif t == ParseToken.TYPE_E:
                 raise NotImplementedError
             elif t == ParseToken.ASSERT:
-                raise NotImplementedError
+                self.gen_assert()
             else:
                 break
         if not self.next() == ParseToken.EOF:
             self.err()
+        return True
 
     def gen_type_a(self):
         # [Opcode - 6b][Unused - 10b][Operand 1 - 16b] | [Operand 2 - 16b][Operand 3 - 16b]
@@ -699,6 +703,12 @@ class CodeGen:
         opcode = self.gen_opcode()
         p1, p2, imm = self.gen_address(), self.gen_address(), self.gen_immediate26()
         self.output_code.append((opcode << 58) | (imm << 32) | (p1 << 16) | (p2 << 0))
+
+    def gen_assert(self):
+        # Interpreted assert - output the assert data to a different stream and just output a single 'assert' instruction to code
+        p1, imm = self.gen_address(), self.gen_immediate32()
+        self.output_code.append(Opcodes.ASSERT.value << 58)
+        self.asserts[len(self.output_code) - 1] = (p1, imm)
 
     def gen_opcode(self) -> int:
         value: ParseToken = self.take()
@@ -721,6 +731,14 @@ class CodeGen:
         if t == ParseToken.IMMEDIATE_26:
             value: int = self.take()
             return utils.to_signed_bitfield(value, 26, 0)
+        else:
+            self.err()
+
+    def gen_immediate32(self) -> int:
+        t: ParseToken = self.take()
+        if t == ParseToken.IMMEDIATE_32:
+            value: int = self.take()
+            return value
         else:
             self.err()
 

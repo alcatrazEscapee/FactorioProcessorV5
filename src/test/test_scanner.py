@@ -1,4 +1,5 @@
 import assembler
+import testfixtures
 
 TEST_DIR = '../../tests/scanner/'
 
@@ -17,8 +18,8 @@ def test_identifiers():
 def test_instructions():
     scan('instructions')
 
-def test_pseudo_instructions():
-    scan('pseudo_instructions')
+def test_registers():
+    scan('registers')
 
 def test_comments():
     scan('comments')
@@ -34,4 +35,4 @@ def scan(file: str):
     scanner.trace(TEST_DIR + file + '.out')
     actual_text = assembler.read_file(TEST_DIR + file + '.out')
 
-    assert expected_text == actual_text
+    testfixtures.compare(expected=expected_text, actual=actual_text)

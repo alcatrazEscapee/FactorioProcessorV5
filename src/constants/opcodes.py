@@ -59,3 +59,4 @@ class Opcodes(IntEnum):
     CALL = 49
     RET = 50
     HALT = 51
+    ASSERT = 52
