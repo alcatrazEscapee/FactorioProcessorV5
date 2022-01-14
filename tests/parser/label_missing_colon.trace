@@ -1,0 +1,3 @@
+ERROR Expected ':' after label identifier on line 1:
+label_for_something add r0 r0 r0
+----------------------^

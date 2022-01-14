@@ -1,0 +1,3 @@
+ERROR Value 1024 outside of range [0, 1023] for 10-bit unsigned field on line 1:
+add @1024
+--------^

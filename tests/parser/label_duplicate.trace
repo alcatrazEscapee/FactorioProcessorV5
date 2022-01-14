@@ -1,0 +1,5 @@
+-- Label Dump --
+a_label - 0
+ERROR Duplicate label defined: 'a_label' on line 2:
+a_label:
+------^

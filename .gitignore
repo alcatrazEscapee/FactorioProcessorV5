@@ -1,3 +1,10 @@
 *
 !*/
 !/.gitignore
+
+!/spec/**/*.ssl
+
+!/src/**/*.py
+
+!/tests/**/*.s
+!/tests/**/*.trace

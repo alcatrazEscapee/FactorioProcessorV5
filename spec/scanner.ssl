@@ -1,0 +1,65 @@
+
+Tokens:
+    pSpace
+    pNewline
+    pLetter
+    pNumber
+    pHash
+    pAt
+    pDot
+    pColon
+    pUnderscore
+    pEquals
+
+    pIdentifier
+
+Error:
+    eUnknownToken
+
+
+Main:
+    {[
+        | pSpace, pNewline:
+        | pNewline:
+        | pLetter:
+            @Identifier
+        | pNumber:
+            @Integer
+        | pHash:
+            @Comment
+        | pAt:
+            .pAt
+        | pDot:
+            .pDot
+        | pColon:
+            .pColon
+        | pEquals:
+            .pEquals
+        | *:
+            #eUnknownToken
+    ]};
+
+Identifier:
+    {[
+        | pLetter, pNumber, pUnderscore:
+        | *:
+            >
+    ]}
+    .pIdentifier
+    ;
+
+Integer:
+    {[
+        | pNumber:
+        | *:
+            >
+    ]}
+    .pInteger
+    ;
+
+Comment:
+    {[
+        | pNewline:
+            >
+        | *:
+    ]};

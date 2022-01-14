@@ -1,0 +1,3 @@
+ERROR Value 64 outside of range [-16, 15] for 5-bit signed field on line 1:
+add @@0.64 @@0.0 @@0.0
+---------^
