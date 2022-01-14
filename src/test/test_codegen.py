@@ -12,7 +12,6 @@ def test_empty():
 
 def gen(file: str):
     scan_text = assembler.read_file(TEST_DIR + file + '.s')
-    expected_text = assembler.read_file(TEST_DIR + file + '.trace')
     scanner = assembler.Scanner(scan_text)
 
     assert scanner.scan()
@@ -26,5 +25,6 @@ def gen(file: str):
     codegen.gen()
     codegen.trace(TEST_DIR + file + '.out')
     actual_text = assembler.read_file(TEST_DIR + file + '.out')
+    expected_text = assembler.read_file(TEST_DIR + file + '.trace')
 
     assert expected_text == actual_text

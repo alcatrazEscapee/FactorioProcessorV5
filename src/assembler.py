@@ -6,7 +6,7 @@ import enum
 import utils
 import argparse
 
-from typing import Union, Tuple, List, Optional, Sequence, Dict, Callable, Literal
+from typing import Union, Tuple, List, Set, Optional, Sequence, Dict, Callable, Literal
 
 from utils import Interval
 from constants.opcodes import Opcodes
@@ -70,7 +70,10 @@ class Scanner:
     WHITESPACE = set('\r\t ')
     NEWLINE = set('\n')
     IDENTIFIER_START = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_')
+    NUMERIC_START = set('123456789-')
     NUMERIC = set('0123456789')
+    NUMERIC_BINARY = set('01')
+    NUMERIC_HEX = set('0123456789abcdefABCDEF')
     IDENTIFIER = IDENTIFIER_START | NUMERIC
     INSTRUCTIONS = {i.value for i in AssemblyInstructions}
     REGISTERS = {i.name.lower() for i in Registers}
@@ -84,6 +87,8 @@ class Scanner:
         ':': ScanToken.COLON,
         '=': ScanToken.EQUALS
     }
+    SIGNED_INT = utils.interval_bitfield(32, True)
+    UNSIGNED_INT = utils.interval_bitfield(32, False)
 
     Token = Union[ScanToken, ScanError, int, str]
 
@@ -129,8 +134,31 @@ class Scanner:
             self.line_num += 1
         elif c in Scanner.IDENTIFIER_START:
             self.scan_identifier()
-        elif c in Scanner.NUMERIC or c == '-':
-            self.scan_integer()
+        elif c in Scanner.NUMERIC_START:
+            self.scan_signed_integer()
+        elif c == '0':
+            self.pointer += 1
+            c = self.next()
+            if c == 'b':
+                self.pointer += 1
+                c = self.next()
+                if c in Scanner.NUMERIC_BINARY:
+                    self.scan_binary_integer()
+                else:
+                    self.err('Expected binary integer after 0b')
+            elif c == 'x':
+                self.pointer += 1
+                c = self.next()
+                if c in Scanner.NUMERIC_HEX:
+                    self.scan_hex_integer()
+                else:
+                    self.err('Expected hex integer after 0x')
+            elif c not in Scanner.NUMERIC:
+                # This is actually a decimal '0', with no numeric characters following
+                # This explicitly disallows '00' as an alternative zero
+                self.push(ScanToken.INTEGER, 0)
+            else:
+                self.err('Undefined integer prefix: 0%s' % c)
         elif c == '#':
             self.scan_comment()
         elif c in Scanner.SYNTAX:
@@ -160,15 +188,30 @@ class Scanner:
         else:
             self.push(ScanToken.IDENTIFIER, identifier)
 
-    def scan_integer(self):
-        integer = self.next()
+    def scan_signed_integer(self):
+        value = int(self.scan_numeric(Scanner.NUMERIC))
+        self.push(ScanToken.INTEGER, self.check_interval(value, Scanner.SIGNED_INT))
+
+    def scan_binary_integer(self):
+        value = int(self.scan_numeric(Scanner.NUMERIC_BINARY), base=2)
+        self.push(ScanToken.INTEGER, self.check_interval(value, Scanner.UNSIGNED_INT))
+
+    def scan_hex_integer(self):
+        value = int(self.scan_numeric(Scanner.NUMERIC_HEX), base=16)
+        self.push(ScanToken.INTEGER, self.check_interval(value, Scanner.UNSIGNED_INT))
+
+    def scan_numeric(self, chars: Set[str]) -> str:
+        acc = self.next()  # Assume the first token is of the given chars
         self.pointer += 1
         c = self.next()
-        while c in Scanner.NUMERIC:
-            integer += c
+        while c in chars:
+            acc += c
             self.pointer += 1
             c = self.next()
-        self.push(ScanToken.INTEGER, int(integer))
+        # Next token must be non-numeric, otherwise we allow sequences like 0b123 to be 0b1 23
+        if c in Scanner.NUMERIC:
+            self.err('Non-numeric character must follow integer: %s' % c)
+        return acc
 
     def scan_comment(self):
         self.pointer += 1
@@ -176,6 +219,11 @@ class Scanner:
         while c not in Scanner.NEWLINE:
             self.pointer += 1
             c = self.next()
+
+    def check_interval(self, value: int, interval: Interval) -> int:
+        if interval.check(value):
+            return value
+        self.err(interval.error(value))
 
     def eof(self):
         return self.pointer >= len(self.text)

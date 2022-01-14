@@ -63,7 +63,6 @@ def test_labels():
 
 def parse(file: str):
     scan_text = assembler.read_file(TEST_DIR + file + '.s')
-    expected_text = assembler.read_file(TEST_DIR + file + '.trace')
     scanner = assembler.Scanner(scan_text)
 
     assert scanner.scan()
@@ -72,5 +71,6 @@ def parse(file: str):
     parser.parse()
     parser.trace(TEST_DIR + file + '.out', scanner)
     actual_text = assembler.read_file(TEST_DIR + file + '.out')
+    expected_text = assembler.read_file(TEST_DIR + file + '.trace')
 
     testfixtures.compare(expected=expected_text, actual=actual_text)
