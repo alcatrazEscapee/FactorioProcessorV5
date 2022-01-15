@@ -149,17 +149,6 @@ class TypeARInstruction(TypeAInstruction):
         p1, p2, p3 = parser.parse_address(), parser.parse_address(), parser.parse_address()
         parser.push(ParseToken.TYPE_A, self.opcode, *p1, *p3, *p2)  # reverse order
 
-class TypeBInstruction(ParserInstruction):
-    """ Two operand immediate instruction, with symmetric usage """
-
-    def __init__(self, opcode: ParseToken):
-        self.opcode = opcode
-
-    def parse(self, parser: 'Parser'):
-        p1 = parser.parse_address()
-        p2, imm, _ = parser.parse_address_immediate26_pair()
-        parser.push(ParseToken.TYPE_B, self.opcode, *p1, *p2, ParseToken.IMMEDIATE_26, imm)
-
 class TypeBRInstruction(ParserInstruction):
     """ Two operand immediate instruction, with non-symmetric usage. """
 
@@ -178,6 +167,12 @@ class TypeBRInstruction(ParserInstruction):
         else:
             parser.push(ParseToken.TYPE_B, self.arg_immediate, *p1, *p2, ParseToken.IMMEDIATE_26, imm)
 
+class TypeBInstruction(TypeBRInstruction):
+    """ Two operand immediate instruction, with symmetric usage """
+
+    def __init__(self, opcode: ParseToken):
+        super().__init__(opcode, opcode)
+
 class TypeCInstruction(ParserInstruction):
     """ Two operand offset instruction, which references a label constant """
 
@@ -190,17 +185,6 @@ class TypeCInstruction(ParserInstruction):
         if self.reverse_operand_order:
             p1, p2 = p2, p1
         parser.push(ParseToken.TYPE_C, self.opcode, *p1, *p2, ParseToken.LABEL, label)
-
-class TypeDInstruction(ParserInstruction):
-    """ One operand offset immediate, which references a label constant, with symmetric usage """
-
-    def __init__(self, opcode: ParseToken):
-        self.opcode = opcode
-
-    def parse(self, parser: 'Parser'):
-        p1, imm, _ = parser.parse_address_immediate26_pair()
-        label = parser.parse_label_reference()
-        parser.push(ParseToken.TYPE_D, self.opcode, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
 
 class TypeDRInstruction(ParserInstruction):
     """ One operand offset immediate, which reference a label constant, with non-symmetric usage """
@@ -219,6 +203,12 @@ class TypeDRInstruction(ParserInstruction):
             parser.push(ParseToken.TYPE_D, self.immediate_arg, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
         else:
             parser.push(ParseToken.TYPE_D, self.arg_immediate, *p1, ParseToken.IMMEDIATE_26, imm, ParseToken.LABEL, label)
+
+class TypeDInstruction(TypeDRInstruction):
+    """ One operand offset immediate, which references a label constant, with symmetric usage """
+
+    def __init__(self, opcode: ParseToken):
+        super().__init__(opcode, opcode)
 
 
 class Parser:

@@ -1,52 +1,53 @@
 from typing import NamedTuple, Union
-from numpy import int32
+from numpy import int32, uint64
 
 
-AnyInt = Union[int, int32]
-AnyValue = Union[str, int, int32]
+AnyInt = Union[int, int32, uint64]
+AnyValue = Union[str, AnyInt]
 
 
-def sign(x: int, bits: int) -> int:
-    """ Converts a N-bit 2's compliment value to a signed integer """
-    assert x == bitfield(x, 0, bits)
-    sign_bit = bit(x, bits - 1)
+def mask_int32(bits: AnyInt) -> int32:
+    return (int32(1) << int32(bits)) - int32(1)
+
+def mask_uint64(bits: AnyInt) -> uint64:
+    return (uint64(1) << uint64(bits)) - uint64(1)
+
+def bit_int32(x: AnyInt, index: AnyInt) -> int32:
+    return (int32(x) >> int32(index)) & int32(1)
+
+def bit_uint64(x: AnyInt, index: AnyInt) -> uint64:
+    return (uint64(x) >> uint64(index)) & uint64(1)
+
+def sign_32(x: int32, bits: int32) -> int32:
+    sign_bit = bit_int32(x, bits - int32(1))
     if sign_bit == 1:
-        return x - (1 << bits)
+        return x - (int32(1) << bits)
     else:
         return x
 
+def sign_64_to_32(x: uint64, bits: uint64) -> int32:
+    sign_bit = bit_uint64(x, bits - uint64(1))
+    if sign_bit == 1:
+        return int32(x) - (int32(1) << int32(bits))
+    else:
+        return int32(x)
 
-def invert(x: int, bits: int) -> int:
-    """ Inverts the first N bits of x """
-    assert bits > 0
-    return x ^ mask(bits)
+def bitfield_int32(x: AnyInt, offset: AnyInt, bits: AnyInt) -> int32:
+    return (int32(x) >> int32(offset)) & mask_int32(bits)
 
+def bitfield_uint64(x: AnyInt, offset: AnyInt, bits: AnyInt) -> uint64:
+    return (uint64(x) >> uint64(offset)) & mask_uint64(bits)
 
-def mask(bits: int) -> int:
-    """ Returns the value 0b11...1 with N ones """
-    assert bits > 0
-    return (1 << bits) - 1
+def signed_bitfield_64_to_32(value: AnyInt, offset: AnyInt, bits: AnyInt) -> int32:
+    return sign_64_to_32(bitfield_uint64(value, offset, bits), bits)
 
-
-def bit(x: int, index: int) -> int:
-    """ Returns the Nth bit of x """
-    return (x >> index) & 1
-
-
-def bitfield(x: int, offset: int, bits: int) -> int:
-    """ Returns the bits-length bit field of x, with an offset of index from the LSB """
-    return (x >> offset) & mask(bits)
+def signed_bitfield_32(value: AnyInt, offset: AnyInt, bits: AnyInt) -> int32:
+    return sign_32(bitfield_int32(value, offset, bits), bits)
 
 
 def to_bitfield(value: int, bits: int, offset: int) -> int:
     interval_bitfield(bits, False).require(value)
     return value << offset
-
-
-def signed_bitfield(value: int, index: int, bits: int) -> int:
-    """ Returns the bits-length bit field of x, with an offset of index from the LSB, decoded into a signed integer from a two's compliment representation """
-    return sign(bitfield(value, index, bits), bits)
-
 
 def to_signed_bitfield(value: int, bits: int, offset: int) -> int:
     interval_bitfield(bits, True).require(value)
