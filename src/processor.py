@@ -2,8 +2,7 @@
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
 
 from typing import List, Tuple, Dict, Callable, NamedTuple
-from constants.opcodes import Opcodes
-from constants.registers import Registers
+from constants import Opcodes, Registers
 
 import utils
 

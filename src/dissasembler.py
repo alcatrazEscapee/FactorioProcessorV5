@@ -1,5 +1,5 @@
 from typing import List
-from constants.opcodes import Opcodes
+from constants import Opcodes
 
 import processor
 

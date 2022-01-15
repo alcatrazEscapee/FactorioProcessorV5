@@ -1,5 +1,6 @@
+from phases import Scanner, Parser
+
 import utils
-import assembler
 import testfixtures
 
 TEST_DIR = '../../tests/parser/'
@@ -76,11 +77,11 @@ def test_labels():
 
 def parse(file: str):
     scan_text = utils.read_file(TEST_DIR + file + '.s')
-    scanner = assembler.Scanner(scan_text)
+    scanner = Scanner(scan_text)
 
     assert scanner.scan()
 
-    parser = assembler.Parser(scanner.output_tokens)
+    parser = Parser(scanner.output_tokens)
     parser.parse()
     parser.trace(TEST_DIR + file + '.out', scanner)
     actual_text = utils.read_file(TEST_DIR + file + '.out')

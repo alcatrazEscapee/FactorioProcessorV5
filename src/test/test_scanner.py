@@ -1,5 +1,6 @@
+from phases import Scanner
+
 import utils
-import assembler
 import testfixtures
 
 
@@ -52,7 +53,7 @@ def test_unknown_token():
 
 def scan(file: str):
     scan_text = utils.read_file(TEST_DIR + file + '.s')
-    scanner = assembler.Scanner(scan_text)
+    scanner = Scanner(scan_text)
     scanner.scan()
     scanner.trace(TEST_DIR + file + '.out')
     actual_text = utils.read_file(TEST_DIR + file + '.out')

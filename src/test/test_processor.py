@@ -1,7 +1,8 @@
+from assembler import Assembler
+
 import utils
 import pytest
 import processor
-import assembler
 import dissasembler
 
 
@@ -18,7 +19,7 @@ def test_halt():
 
 def run(file: str):
     text = utils.read_file(TEST_DIR + file + '.s')
-    asm = assembler.Assembler(text, 'interpreted')
+    asm = Assembler(text, 'interpreted')
 
     assert asm.assemble(), asm.error
 

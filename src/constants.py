@@ -1,7 +1,12 @@
-from enum import Enum
+from enum import Enum, IntEnum
 
 
-class AssemblyInstructions(Enum):
+class Instructions(Enum):
+    """
+    Assembly level instructions, identified by their asm name
+    Comments reference how assembly instructions transpile to their possible architecture level instructions
+    """
+
     ADD = 'add'
     SUB = 'sub'
     MUL = 'mul'
@@ -86,3 +91,90 @@ class AssemblyInstructions(Enum):
     NOOP = 'noop'  # noop -> add r0 r0 r0
     SET = 'set'  # set X Y -> add X Y r0
     SETI = 'seti'  # set X #M -> addi X r0 #M
+
+
+class Opcodes(IntEnum):
+    """ Architecture level instruction opcodes """
+
+    # Type A
+    ADD = 0
+    SUB = 1
+    MUL = 2
+    DIV = 3
+    POW = 4
+    MOD = 5
+    AND = 6
+    OR = 7
+    NAND = 8
+    NOR = 9
+    XOR = 10
+    XNOR = 11
+    LS = 12
+    RS = 13
+    EQ = 14
+    NE = 15
+    LT = 16
+    LE = 17
+    # Type B
+    ADDI = 18
+    SUBIR = 19
+    MULI = 20
+    DIVI = 21
+    DIVIR = 22
+    POWI = 23
+    POWIR = 24
+    MODI = 25
+    MODIR = 26
+    ANDI = 27
+    ORI = 28
+    NANDI = 29
+    NORI = 30
+    XORI = 31
+    XNORI = 32
+    LSI = 33
+    RSI = 34
+    LSIR = 35
+    RSIR = 36
+    EQI = 37
+    NEI = 38
+    LTI = 39
+    GTI = 40
+    # Type C
+    BEQ = 41
+    BNE = 42
+    BLT = 43
+    BLE = 44
+    # Type D
+    BEQI = 45
+    BNEI = 46
+    BLTI = 47
+    BGTI = 48
+    # Special (Type E)
+    CALL = 49
+    RET = 50
+    HALT = 51
+    ASSERT = 52
+
+
+class Registers(IntEnum):
+    """ Named memory locations (registers) """
+    SP = 1023
+    RA = 1022
+    RV = 1021
+    R0 = 0  # Non-writable (always zero)
+    R1 = 1
+    R2 = 2
+    R3 = 3
+    R4 = 4
+    R5 = 5
+    R6 = 6
+    R7 = 7
+    R8 = 8
+    R9 = 9
+    R10 = 10
+    R11 = 11
+    R12 = 12
+    R13 = 13
+    R14 = 14
+    R15 = 15
+    R16 = 16
