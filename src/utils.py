@@ -1,4 +1,9 @@
-from typing import NamedTuple
+from typing import NamedTuple, Union
+from numpy import int32
+
+
+AnyInt = Union[int, int32]
+AnyValue = Union[str, int, int32]
 
 
 def sign(x: int, bits: int) -> int:
