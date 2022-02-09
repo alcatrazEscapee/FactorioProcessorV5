@@ -2,7 +2,7 @@ from typing import Dict, Callable
 from enum import IntEnum, auto
 from numpy import int32
 from simulator import Signal, Entity
-from utils import AnyValue
+from utils import AnyValue, AnyInt
 
 
 class ArithmeticOperation(IntEnum):
@@ -41,6 +41,20 @@ class ArithmeticCombinator(Entity):
         ArithmeticOperation.XOR: lambda x, y: x ^ y
     }
 
+    KEYS: Dict[ArithmeticOperation, str] = {
+        ArithmeticOperation.ADD: '+',
+        ArithmeticOperation.SUBTRACT: '-',
+        ArithmeticOperation.MULTIPLY: '*',
+        ArithmeticOperation.DIVIDE: '/',
+        ArithmeticOperation.MODULO: '%',
+        ArithmeticOperation.EXPONENT: '**',
+        ArithmeticOperation.LEFT_SHIFT: '<<',
+        ArithmeticOperation.RIGHT_SHIFT: '>>',
+        ArithmeticOperation.AND: '&',
+        ArithmeticOperation.OR: '|',
+        ArithmeticOperation.XOR: '^'
+    }
+
     def __init__(self, left: AnyValue, right: AnyValue, out: str, operation: ArithmeticOperation):
         super().__init__()
         self.green_in = Signal()
@@ -48,7 +62,10 @@ class ArithmeticCombinator(Entity):
         self.red_in = Signal()
         self.red_out = Signal()
 
-        self.connections = {'1': {'red': self.red_in, 'green': self.green_in}, '2': {'red': self.red_out, 'green': self.green_out}}
+        self.connections = {
+            1: {'red': self.red_in, 'green': self.green_in},
+            2: {'red': self.red_out, 'green': self.green_out}
+        }
 
         # Signal conditions
         if Signal.is_named(left):
@@ -84,6 +101,13 @@ class ArithmeticCombinator(Entity):
         self.right = right
         self.out = out
         self.operator = ArithmeticCombinator.OPERATIONS[operation]
+
+        self.key = '%s:=%s%s%s' % (
+            Signal.from_formal(out),
+            str(left) if self.left_constant else Signal.from_formal(left),
+            ArithmeticCombinator.KEYS[operation],
+            str(right) if self.right_constant else Signal.from_formal(right)
+        )
 
     def tick(self):
         # Initially clear output signals
@@ -133,6 +157,14 @@ class ArithmeticCombinator(Entity):
         # Handled input signals, so clear them
         self.red_in.clear()
         self.green_in.clear()
+
+    def set_left(self, value: AnyInt):
+        assert self.left_constant, 'Left input is not constant: %s' % self.key
+        self.left = int32(value)
+
+    def set_right(self, value: AnyInt):
+        assert self.right_constant, 'Right input is not constant: %s' % self.key
+        self.right = int32(value)
 
     def __str__(self):
         return 'Arithmetic: GI = %s, RI = %s, GO = %s, RO = %s' % (str(self.green_in), str(self.red_in), str(self.green_out), str(self.red_out))

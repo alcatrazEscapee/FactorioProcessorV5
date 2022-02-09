@@ -2,7 +2,7 @@ from enum import IntEnum, auto
 from typing import Dict, Callable
 from numpy import int32
 from simulator import Signal, Entity
-from utils import AnyValue
+from utils import AnyValue, AnyInt
 
 
 class DeciderOperation(IntEnum):
@@ -36,6 +36,15 @@ class DeciderCombinator(Entity):
         DeciderOperation.NOT_EQUAL: lambda x, y: x != y
     }
 
+    KEYS: Dict[DeciderOperation, str] = {
+        DeciderOperation.LESS_THAN: '<',
+        DeciderOperation.GREATER_THAN: '>',
+        DeciderOperation.LESS_EQUAL: '<=',
+        DeciderOperation.GREATER_EQUAL: '>=',
+        DeciderOperation.EQUAL: '=',
+        DeciderOperation.NOT_EQUAL: '!='
+    }
+
     def __init__(self, left: str, right: AnyValue, out: str, operation: DeciderOperation, output_input_count: bool = False):
         super().__init__()
         self.red_in = Signal()
@@ -43,7 +52,10 @@ class DeciderCombinator(Entity):
         self.red_out = Signal()
         self.green_out = Signal()
 
-        self.connections = {'1': {'red': self.red_in, 'green': self.green_in}, '2': {'red': self.red_out, 'green': self.green_out}}
+        self.connections = {
+            1: {'red': self.red_in, 'green': self.green_in},
+            2: {'red': self.red_out, 'green': self.green_out}
+        }
 
         # Signal conditions
         if left == Signal.EACH:
@@ -89,6 +101,13 @@ class DeciderCombinator(Entity):
         self.out = out
         self.operator = DeciderCombinator.OPERATIONS[operation]
         self.output_input_count = output_input_count
+
+        self.key = '%s:=%s%s%s' % (
+            Signal.from_formal(out),
+            Signal.from_formal(left),
+            DeciderCombinator.KEYS[operation],
+            str(right) if self.right_constant else Signal.from_formal(right)
+        )
 
     def tick(self):
         # Initially clear output signals
@@ -165,6 +184,10 @@ class DeciderCombinator(Entity):
         # Handled input signals, so clear them
         self.red_in.clear()
         self.green_in.clear()
+
+    def set(self, value: AnyInt):
+        assert self.right_constant, 'Right input is not a constant: %s' % self.key
+        self.right = int32(value)
 
     def __str__(self):
         return 'Decider: GI = %s, RI = %s, GO = %s, RO = %s' % (str(self.green_in), str(self.red_in), str(self.green_out), str(self.red_out))

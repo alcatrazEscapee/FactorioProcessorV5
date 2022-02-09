@@ -1,10 +1,12 @@
-from typing import NamedTuple, Union
+from typing import NamedTuple, Union, Dict, List
 from numpy import int32, uint64
 
 
 AnyInt = Union[int, int32, uint64]
 AnyValue = Union[str, AnyInt]
 
+JsonObject = Dict[str, 'Json']
+Json = Union[int, str, bool, List['Json'], JsonObject]
 
 def mask_int32(bits: AnyInt) -> int32:
     return (int32(1) << int32(bits)) - int32(1)
@@ -18,10 +20,10 @@ def bit_int32(x: AnyInt, index: AnyInt) -> int32:
 def bit_uint64(x: AnyInt, index: AnyInt) -> uint64:
     return (uint64(x) >> uint64(index)) & uint64(1)
 
-def sign_32(x: int32, bits: int32) -> int32:
-    sign_bit = bit_int32(x, bits - int32(1))
+def sign_32(x: int32, bits: AnyInt) -> int32:
+    sign_bit = bit_int32(x, int32(bits) - int32(1))
     if sign_bit == 1:
-        return x - (int32(1) << bits)
+        return x - (int32(1) << int32(bits))
     else:
         return x
 
