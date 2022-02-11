@@ -1,11 +1,12 @@
 from enum import IntEnum
-from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable
+from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
 from utils import Interval
 from constants import Opcodes, Instructions, Registers
 from phases.scanner import Scanner, ScanToken
 
 import enum
 import utils
+import Levenshtein
 
 
 class ParseToken(IntEnum):
@@ -374,7 +375,7 @@ class Parser:
         if label in self.labels:
             self.err('Duplicate label defined: ' + repr(label))
         self.pointer += 1
-        self.expect(ScanToken.COLON, 'Expected \':\' after label identifier')
+        self.expect(ScanToken.COLON, 'Expected \':\' after label identifier' + self.hint(label, Instructions.names()))
         if label in self.undefined_labels:
             del self.undefined_labels[label]
         self.labels[label] = self.code_point
@@ -383,7 +384,7 @@ class Parser:
         self.expect(ScanToken.IDENTIFIER)
         label = self.next()
         if label not in self.labels and label not in self.undefined_labels:
-            self.undefined_labels[label] = self.make_err('Label used but not defined: \'%s\'' % label)
+            self.undefined_labels[label] = self.make_err('Label used but not defined: \'%s\'%s' % (label, self.hint(label, self.labels.keys())))
         self.pointer += 1
         return label
 
@@ -487,7 +488,7 @@ class Parser:
             self.pointer += 1
             alias = self.next()
             if alias not in self.aliases:
-                self.err('Undefined alias \'%s\'' % alias)
+                self.err('Undefined alias \'%s\'%s' % (alias, self.hint(alias, self.aliases.keys())))
             self.pointer += 1
             return self.check_interval(self.aliases[alias], interval)
         elif t == ScanToken.INTEGER:
@@ -532,6 +533,13 @@ class Parser:
             if token in Parser.INSTRUCTION_TYPES:
                 self.code_point += 1
             self.output_tokens.append(token)
+
+    def hint(self, token: str, values: Iterable[str]) -> str:
+        # Find a similar token and issue a hint
+        distance, value = min(((Levenshtein.distance(value, token), value) for value in values))
+        if distance <= 2:
+            return ' (Did you mean \'%s\'?)' % value
+        return ''
 
     def err(self, reason: str):
         raise self.make_err(reason)

@@ -25,7 +25,7 @@ class CodeGen:
                 self.gen_type_b()
             elif t == ParseToken.TYPE_C:
                 self.pointer += 1
-                raise NotImplementedError
+                self.gen_type_c()
             elif t == ParseToken.TYPE_D:
                 self.pointer += 1
                 self.gen_type_d()
@@ -53,6 +53,12 @@ class CodeGen:
         opcode = self.gen_opcode()
         p1, p2, imm = self.gen_address(), self.gen_address(), self.gen_immediate26()
         self.output_code.append((opcode << 58) | (imm << 32) | (p1 << 16) | (p2 << 0))
+
+    def gen_type_c(self):
+        # [Opcode - 6b][Unused - 10b][Operand 1 - 16b] | [Branch Offset - 16b][Operand 3 - 16b]
+        opcode = self.gen_opcode()
+        p1, p2, offset = self.gen_address(), self.gen_address(), self.gen_branch_target()
+        self.output_code.append((opcode << 58) | (p1 << 32) | (offset << 16) | (p2 << 0))
 
     def gen_type_d(self):
         # [Opcode - 6b][Immediate - 26b] | [Branch Offset - 16b][Operand 3 - 16b]

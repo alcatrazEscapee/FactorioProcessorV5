@@ -86,5 +86,5 @@ def interval_bitfield(bits: int, signed: bool) -> Interval:
 
 
 def read_file(file: str) -> str:
-    with open(file) as f:
+    with open(file, 'r', encoding='utf-8') as f:
         return f.read()

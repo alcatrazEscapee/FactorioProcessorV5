@@ -4,7 +4,7 @@ import utils
 import testfixtures
 
 
-TEST_DIR = '../../tests/scanner/'
+TEST_DIR = 'assets/scanner/'
 
 def test_empty():
     scan('empty')

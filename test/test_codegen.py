@@ -4,7 +4,7 @@ import utils
 import dissasembler
 import testfixtures
 
-TEST_DIR = '../../tests/codegen/'
+TEST_DIR = 'assets/codegen/'
 
 
 def test_arithmetic1():

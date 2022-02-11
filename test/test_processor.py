@@ -6,7 +6,7 @@ import processor
 import dissasembler
 
 
-TEST_DIR = '../../tests/processor/'
+TEST_DIR = 'assets/processor/'
 
 def test_arithmetic():
     run('arithmetic')

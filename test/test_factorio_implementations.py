@@ -4,7 +4,7 @@ from numpy import int32
 import utils
 import random
 
-BLUEPRINT_DIR = '../../tests/blueprints/'
+BLUEPRINT_DIR = 'assets/blueprints/'
 
 
 def test_edge_detector():

@@ -10,6 +10,6 @@ ADD
 ADDRESS_CONSTANT 0
 ADDRESS_CONSTANT 0
 ADDRESS_CONSTANT 0
-ERROR Label used but not defined: 'b_label' on line 2:
+ERROR Label used but not defined: 'b_label' (Did you mean 'a_label'?) on line 2:
     beq r0 r0 b_label
 --------------------^

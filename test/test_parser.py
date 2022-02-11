@@ -3,7 +3,7 @@ from phases import Scanner, Parser
 import utils
 import testfixtures
 
-TEST_DIR = '../../tests/parser/'
+TEST_DIR = 'assets/parser/'
 
 def test_address_constant():
     parse('address_constant')

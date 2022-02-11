@@ -4,7 +4,11 @@
 
 !/spec/**/*.ssl
 
-!/src/**/*.py
+!/processorv5/**/*.py
+!/test/**/*.py
 
-!/tests/**/*.s
-!/tests/**/*.trace
+!/test/assets/**/*.s
+!/test/assets/**/*.trace
+
+__pycache__
+*.pyc

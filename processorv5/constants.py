@@ -7,6 +7,10 @@ class Instructions(Enum):
     Comments reference how assembly instructions transpile to their possible architecture level instructions
     """
 
+    @staticmethod
+    def names():
+        return [v.value for v in Instructions]
+
     ADD = 'add'
     SUB = 'sub'
     MUL = 'mul'
@@ -132,8 +136,8 @@ class Opcodes(IntEnum):
     XORI = 31
     XNORI = 32
     LSI = 33
-    RSI = 34
-    LSIR = 35
+    LSIR = 34
+    RSI = 35
     RSIR = 36
     EQI = 37
     NEI = 38
