@@ -1,0 +1,6 @@
+SPRITE
+IDENTIFIER 'DUMMY'
+SPRITE_LITERAL '.|.|.|.|.|.'
+ERROR Unknown token: '?' on line 10:
+?
+-^

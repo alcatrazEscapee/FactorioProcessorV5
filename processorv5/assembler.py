@@ -103,6 +103,7 @@ class Assembler:
 
         self.code: Optional[List[int]] = None
         self.asserts: Optional[Dict[int, Tuple[int, int]]] = None
+        self.sprites: Optional[List[str]] = None
         self.error: Optional[str] = None
 
     def assemble(self) -> bool:
@@ -117,11 +118,12 @@ class Assembler:
             self.error = 'Parser error:\n%s' % parser.error
             return False
 
-        codegen = CodeGen(parser.output_tokens, parser.labels)
+        codegen = CodeGen(parser)
         codegen.gen()
 
         self.code = codegen.output_code
         self.asserts = codegen.asserts
+        self.sprites = codegen.sprites
         return True
 
 

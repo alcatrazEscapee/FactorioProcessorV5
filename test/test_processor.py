@@ -22,7 +22,7 @@ def run(file: str):
 
     assert asm.assemble(), asm.error
 
-    proc = processor.Processor(asm.asserts, lambda p: pytest.fail(processor.create_assert_debug_view(p), False))
+    proc = processor.Processor(asm.asserts, exception_handle=lambda p, e: pytest.fail(str(e) + '\n\n' + processor.debug_view(p), False))
     proc.load(asm.code)
     proc.run()
 

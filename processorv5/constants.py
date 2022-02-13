@@ -7,6 +7,11 @@ INSTRUCTION_MEMORY_SIZE = 7680
 
 FIRST_GENERAL_MEMORY_ADDRESS = 20
 
+COUNTER_PORT = 2000
+
+SCREEN_WIDTH = 32
+SCREEN_HEIGHT = 32
+
 
 class Instructions(Enum):
     """
@@ -110,7 +115,7 @@ class Instructions(Enum):
     GLSS = 'glss'
     GCB = 'gcb'
     GCI = 'gci'
-    GMV = 'gvm'
+    GMV = 'gmv'
     GMVI = 'gmvi'
 
 
@@ -202,6 +207,17 @@ class Registers(IntEnum):
     R16 = 16
 
 
+class GPUInstruction(IntEnum):
+    GFLUSH = 0
+    GLSI = 1
+    GLSM = 2
+    GLSS = 3
+    GCB = 4
+    GCI = 5
+    GMV = 6
+    GMVI = 7
+
+
 class GPUFunction(IntEnum):
     G_CLEAR = 0
     G_NOR = 1
@@ -219,3 +235,9 @@ class GPUFunction(IntEnum):
     G_HIGHLIGHT_NEGATIVE = 13
     G_DRAW_ALPHA = 14
     G_FULL = 15
+
+    def apply_str(self, lhs: str, rhs: str) -> str:
+        return '#' if self.apply(lhs == '#', rhs == '#') else '.'
+
+    def apply(self, lhs: bool, rhs: bool) -> bool:
+        return ((self.value >> ((rhs << 1) | lhs)) & 1) != 0

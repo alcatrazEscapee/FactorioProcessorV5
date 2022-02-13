@@ -235,6 +235,7 @@ class Scanner:
         line = ''
         while c != '`':
             if c in Scanner.NEWLINE:
+                self.line_num += 1
                 if line != '':
                     lines.append(line)
                     line = ''
@@ -254,7 +255,7 @@ class Scanner:
         if any(len(line) > 32 for line in lines) or len(lines) > 32:
             self.err('Sprite literal must be within [32 x 32]')
 
-        self.push(ScanToken.SPRITE_LITERAL, ','.join(lines))
+        self.push(ScanToken.SPRITE_LITERAL, '|'.join(lines))
         self.pointer += 1
 
     def check_interval(self, value: int, interval: Interval) -> int:

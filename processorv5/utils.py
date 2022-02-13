@@ -4,6 +4,8 @@ from PIL import Image
 
 import os
 
+import constants
+
 AnyInt = Union[int, int32, uint64]
 AnyValue = Union[str, AnyInt]
 
@@ -99,6 +101,10 @@ def read_file(file: str) -> str:
     with open(file, 'r', encoding='utf-8') as f:
         return f.read()
 
+def write_file(file: str, contents: str):
+    with open(file, 'w', encoding='utf-8') as f:
+        f.write(contents)
+
 
 class TextureHelper:
 
@@ -112,7 +118,7 @@ class TextureHelper:
         width, height, data = self.load_image(name)
         if x < 0 or y < 0 or x + w > width or y + h > height:
             self.err('Image parameters [%d %d %d %d] are illegal for image \'%s\' with dimensions %d x %d' % (x, y, w, h, name, width, height))
-        return ','.join([''.join(['#' if data[y + dy][x + dx] else '.' for dx in range(w)]) for dy in range(h)])
+        return '|'.join([''.join(['#' if data[y + dy][x + dx] else '.' for dx in range(w)]) for dy in range(h)])
 
     def load_image(self, name: str) -> Tuple[int, int, Tuple[Tuple[bool, ...], ...]]:
         if name in self.cache:
@@ -128,6 +134,28 @@ class TextureHelper:
             self.cache[name] = (width, height, data)
             return width, height, data
         except Exception as e:
-            error = e
-        if error is not None:
-            self.err('Unknown error occurred while reading \'%s\': %s' % (name, error))
+            self.err('Unknown error occurred while reading \'%s\': %s' % (name, e))
+
+
+class ImageBuffer:
+
+    @staticmethod
+    def empty() -> 'ImageBuffer':
+        return ImageBuffer(())
+
+    @staticmethod
+    def unpack(s: str) -> 'ImageBuffer':
+        return ImageBuffer(tuple(s.split('|')))
+
+    @staticmethod
+    def create(func: Callable[[int, int], str]) -> 'ImageBuffer':
+        return ImageBuffer(tuple(tuple(func(x, y) for x in range(constants.SCREEN_WIDTH)) for y in range(constants.SCREEN_HEIGHT)))
+
+    def __init__(self, data: Tuple[str, ...] | Tuple[Tuple[str, ...], ...]):
+        self.data: Tuple[str, ...] | Tuple[Tuple[str, ...], ...] = data
+
+    def __getitem__(self, item: Tuple[int, int]) -> str:
+        x, y = item
+        if 0 <= y < len(self.data) and 0 <= x < len(row := self.data[y]):
+            return row[x]
+        return '.'

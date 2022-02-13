@@ -2,7 +2,7 @@ import os
 from enum import IntEnum
 from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
 from utils import Interval, TextureHelper
-from constants import Opcodes, Instructions, Registers
+from constants import Opcodes, Instructions, Registers, GPUInstruction, GPUFunction
 from phases.scanner import Scanner, ScanToken
 
 import enum
@@ -71,6 +71,7 @@ class ParseToken(IntEnum):
     TYPE_C = enum.auto()  # Two operand offset
     TYPE_D = enum.auto()  # Operand immediate offset
     TYPE_E = enum.auto()  # Special
+    TYPE_F = enum.auto()  # GPU
 
     # Address types
     ADDRESS_CONSTANT = enum.auto()
@@ -125,7 +126,7 @@ class ParserInstruction:
 
 class CustomInstruction(ParserInstruction):
 
-    def __init__(self, tokens: Callable[['Parser'], Tuple[ParseToken, ...]], feed: Callable[[Tuple[ParseToken, ...]], Tuple[ParseToken]] = None):
+    def __init__(self, tokens: Callable[['Parser'], Tuple['Parser.Token', ...]], feed: Callable[[Tuple['Parser.Token', ...]], Tuple['Parser.Token', ...]] = None):
         self.tokens = tokens
         self.feed = feed
 
@@ -284,21 +285,32 @@ class Parser:
         Instructions.NOOP: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.ADD, *Parser.R0, *Parser.R0, *Parser.R0)),
         Instructions.SET: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.ADD, *p.parse_address(), *p.parse_address(), *Parser.R0)),
         Instructions.SETI: CustomInstruction(lambda p: (ParseToken.TYPE_B, ParseToken.ADDI, *p.parse_address(), *Parser.R0, ParseToken.IMMEDIATE_26, p.parse_immediate26())),
-        Instructions.BR: CustomInstruction(lambda p: (ParseToken.TYPE_C, ParseToken.BEQ, *Parser.R0, *Parser.R0, ParseToken.LABEL, p.parse_label_reference()))
+        Instructions.BR: CustomInstruction(lambda p: (ParseToken.TYPE_C, ParseToken.BEQ, *Parser.R0, *Parser.R0, ParseToken.LABEL, p.parse_label_reference())),
 
+        # GPU
+        Instructions.GFLUSH: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GFLUSH)),
+        Instructions.GLSI: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLSI, p.parse_gpu_address())),
+        Instructions.GLSM: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLSM, *p.parse_address())),
+        #todo: glss
+        Instructions.GCB: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GCB, p.parse_gpu_function())),
+        Instructions.GCI: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GCI, p.parse_gpu_function())),
+        Instructions.GMV: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GMV, *p.parse_address(), *p.parse_address())),
+        Instructions.GMVI: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GMVI, p.parse_gpu_move(), p.parse_gpu_move()))
     }.items()}
 
     INSTRUCTION_TYPES = {
-        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E
+        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E, ParseToken.TYPE_F
     }
 
-    Token = Union[ParseToken, ParseError, int, str]
+    Token = Union[ParseToken, ParseError, GPUInstruction, GPUFunction, int, str]
 
     ADDRESS: Interval = utils.interval_bitfield(10, False)
     OFFSET: Interval = utils.interval_bitfield(5, True)
     IMMEDIATE_SIGNED: Interval = utils.interval_bitfield(26, True)
     IMMEDIATE_UNSIGNED: Interval = utils.interval_bitfield(26, False)
     VALUE: Interval = utils.interval_bitfield(32, True)
+    GPU_ADDRESS: Interval = utils.interval_bitfield(6, False)
+    GPU_MOVE: Interval = utils.interval_bitfield(5, False)
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
@@ -345,6 +357,8 @@ class Parser:
                 elif isinstance(t, ParseError):
                     t.trace(scanner)
                     f.write(' ' + str(t))
+                elif isinstance(t, GPUInstruction) or isinstance(t, GPUFunction):
+                    f.write(' ' + t.name)
                 else:
                     f.write(' ' + repr(t))
             f.write('\n')
@@ -402,7 +416,7 @@ class Parser:
         self.labels[label] = self.code_point
 
     def parse_label_reference(self) -> str:
-        self.expect(ScanToken.IDENTIFIER)
+        self.expect(ScanToken.IDENTIFIER, 'Expected a label reference')
         label = self.next()
         if label not in self.labels and label not in self.undefined_labels:
             self.undefined_labels[label] = self.make_err('Label used but not defined: \'%s\'%s' % (label, self.hint(label, self.labels.keys())))
@@ -597,8 +611,14 @@ class Parser:
     def parse_address_offset(self) -> int:
         return self.parse_literal_or_named_constant(Parser.OFFSET)
 
+    def parse_gpu_address(self) -> int:
+        return self.parse_literal_or_named_constant(Parser.GPU_ADDRESS)
+
     def parse_immediate26(self) -> int:
         return self.parse_literal_or_named_constant(Parser.IMMEDIATE_SIGNED)
+
+    def parse_gpu_move(self) -> int:
+        return self.parse_literal_or_named_constant(Parser.GPU_MOVE)
 
     def parse_literal_or_named_constant(self, interval: Interval) -> int:
         t = self.next()
@@ -630,6 +650,16 @@ class Parser:
         self.check_interval(value, interval)
         self.pointer += 1
         return value
+
+    def parse_gpu_function(self) -> GPUFunction:
+        self.expect(ScanToken.IDENTIFIER, 'Expected the name of a GPU function')
+        func = self.next()
+        try:
+            func = GPUFunction[func]
+            self.pointer += 1
+            return func
+        except KeyError:
+            self.err('Not a valid GPU function: \'%s\'' % func)
 
     def check_interval(self, value: int, interval: Interval) -> int:
         if interval.check(value):

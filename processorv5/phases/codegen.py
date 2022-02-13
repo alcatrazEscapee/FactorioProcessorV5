@@ -1,5 +1,5 @@
 from typing import Tuple, List, Dict
-from constants import Opcodes
+from constants import Opcodes, GPUInstruction, GPUFunction
 from phases.parser import Parser, ParseToken
 
 import utils
@@ -7,11 +7,12 @@ import utils
 
 class CodeGen:
 
-    def __init__(self, tokens: List[Parser.Token], labels: Dict[str, int]):
-        self.input_tokens = tokens
-        self.labels = labels
+    def __init__(self, parser: Parser):
+        self.input_tokens = parser.output_tokens
+        self.labels = parser.labels
         self.output_code: List[int] = []
         self.asserts: Dict[int, Tuple[int, int]] = {}
+        self.sprites: List[str] = parser.sprites
         self.pointer = 0
 
     def gen(self):
@@ -32,6 +33,9 @@ class CodeGen:
             elif t == ParseToken.TYPE_E:
                 self.pointer += 1
                 self.gen_type_e()
+            elif t == ParseToken.TYPE_F:
+                self.pointer += 1
+                self.gen_type_f()
             elif t == ParseToken.ASSERT:
                 self.pointer += 1
                 self.gen_assert()
@@ -75,6 +79,32 @@ class CodeGen:
         else:
             raise NotImplementedError
 
+    def gen_type_f(self):
+        # GPU
+        opcode = utils.to_bitfield(Opcodes.GPU.value, 6, 0)
+        func: GPUInstruction = self.take()
+        gpu_opcode = utils.to_bitfield(func.value, 3, 0)
+        instruction = (opcode << 58) | (gpu_opcode << 55)
+        if func == GPUInstruction.GFLUSH:
+            self.output_code.append(instruction)
+        elif func == GPUInstruction.GLSI:
+            imm: int = self.take()
+            self.output_code.append(instruction | utils.to_bitfield(imm, 16, 32))
+        elif func == GPUInstruction.GLSM:
+            p1 = self.gen_address()
+            self.output_code.append(instruction | (p1 << 32))
+        elif func == GPUInstruction.GCB or func == GPUInstruction.GCI:
+            f: GPUFunction = self.take()
+            self.output_code.append(instruction | utils.to_bitfield(f.value, 4, 51))
+        elif func == GPUInstruction.GMV:
+            x, y = self.gen_address(), self.gen_address()
+            self.output_code.append(instruction | utils.to_bitfield(x, 16, 32) | utils.to_bitfield(y, 16, 0))
+        elif func == GPUInstruction.GMVI:
+            px, py = self.take(), self.take()
+            self.output_code.append(instruction | (px << 32) | (py << 0))
+        else:
+            self.err()
+
     def gen_assert(self):
         # Interpreted assert - output the assert data to a different stream and just output a single 'assert' instruction to code
         p1, imm = self.gen_address(), self.gen_immediate32()
@@ -98,28 +128,19 @@ class CodeGen:
             self.err()
 
     def gen_branch_target(self) -> int:
-        t: ParseToken = self.take()
-        if t == ParseToken.LABEL:
-            label: str = self.take()
-            branch_point = self.labels[label]
-            code_point = len(self.output_code)
-            return utils.to_signed_bitfield(branch_point - code_point, 16, 0)
+        self.expect(ParseToken.LABEL)
+        label: str = self.take()
+        branch_point = self.labels[label]
+        code_point = len(self.output_code)
+        return utils.to_signed_bitfield(branch_point - code_point, 16, 0)
 
     def gen_immediate26(self) -> int:
-        t: ParseToken = self.take()
-        if t == ParseToken.IMMEDIATE_26:
-            value: int = self.take()
-            return utils.to_signed_bitfield(value, 26, 0)
-        else:
-            self.err()
+        self.expect(ParseToken.IMMEDIATE_26)
+        return utils.to_signed_bitfield(self.take(), 26, 0)
 
     def gen_immediate32(self) -> int:
-        t: ParseToken = self.take()
-        if t == ParseToken.IMMEDIATE_32:
-            value: int = self.take()
-            return value
-        else:
-            self.err()
+        self.expect(ParseToken.IMMEDIATE_32)
+        return self.take()
 
     def eof(self) -> bool:
         return self.pointer >= len(self.input_tokens)
@@ -131,6 +152,11 @@ class CodeGen:
             'Next     : ' + str(self.next()),
             'Incoming : ' + str(self.input_tokens[self.pointer + 1:])
         ]))
+
+    def expect(self, token: Parser.Token):
+        t = self.take()
+        if t != token:
+            self.err()
 
     def take(self) -> Parser.Token:
         t = self.next()
