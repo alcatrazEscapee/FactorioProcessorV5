@@ -1,14 +1,14 @@
 *
 !*/
 !/.gitignore
-
-!/spec/**/*.ssl
+!/requirements.txt
 
 !/processorv5/**/*.py
 !/test/**/*.py
 
 !/test/assets/**/*.s
 !/test/assets/**/*.trace
+!/test/assets/textures/*.png
 
 __pycache__
 *.pyc

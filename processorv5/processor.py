@@ -6,6 +6,7 @@ from constants import Opcodes, Registers
 from numpy import int32, uint64
 
 import utils
+import dissasembler
 
 
 class IRData(NamedTuple):
@@ -147,6 +148,35 @@ def decode_operand(operand: int32) -> OperandData:
         utils.signed_bitfield_32(operand, 1, 5),
         utils.bit_int32(operand, 0)
     )
+
+
+def create_assert_debug_view(proc: Processor):
+    # Synthetic / Interpreted assertion handler
+    addr, expected = proc.asserts[proc.pc]
+    actual = proc.mem_get_operand(addr)
+    reg = dissasembler.decode_address(addr)
+
+    # Show an area around the non-zero memory
+    memory_view = set()
+    for i, m in enumerate(proc.memory):
+        if m != 0:
+            memory_view |= {i - 1, i, i + 1}
+
+    # Show a view of the assembly near the area
+    decoded = dissasembler.decode(proc.instructions)
+    decoded_view = decoded[proc.pc - 3:proc.pc] + [decoded[proc.pc] + ' <-- HERE'] + decoded[proc.pc + 1:proc.pc + 4]
+
+    return '\n'.join([
+        'At: assert %s = %d (got %d)' % (reg, expected, actual),
+        'PC: %d' % proc.pc,
+        '',
+        'Disassembly:',
+        *decoded_view,
+        '',
+        'Memory:',
+        'Addr | Hex  | Dec',
+        *['%04d | %s | %d' % (i, format(m, '04x'), m) for i, m in enumerate(proc.memory) if i in memory_view]
+    ])
 
 
 class Instruction:

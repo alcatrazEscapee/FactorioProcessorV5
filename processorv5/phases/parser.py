@@ -1,11 +1,13 @@
+import os
 from enum import IntEnum
 from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
-from utils import Interval
+from utils import Interval, TextureHelper
 from constants import Opcodes, Instructions, Registers
 from phases.scanner import Scanner, ScanToken
 
 import enum
 import utils
+import constants
 import Levenshtein
 
 
@@ -281,7 +283,8 @@ class Parser:
         # Custom
         Instructions.NOOP: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.ADD, *Parser.R0, *Parser.R0, *Parser.R0)),
         Instructions.SET: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.ADD, *p.parse_address(), *p.parse_address(), *Parser.R0)),
-        Instructions.SETI: CustomInstruction(lambda p: (ParseToken.TYPE_B, ParseToken.ADDI, *p.parse_address(), *Parser.R0, ParseToken.IMMEDIATE_26, p.parse_immediate26()))
+        Instructions.SETI: CustomInstruction(lambda p: (ParseToken.TYPE_B, ParseToken.ADDI, *p.parse_address(), *Parser.R0, ParseToken.IMMEDIATE_26, p.parse_immediate26())),
+        Instructions.BR: CustomInstruction(lambda p: (ParseToken.TYPE_C, ParseToken.BEQ, *Parser.R0, *Parser.R0, ParseToken.LABEL, p.parse_label_reference()))
 
     }.items()}
 
@@ -299,15 +302,20 @@ class Parser:
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
-    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none'):
+    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none', root: str = None):
         self.input_tokens: List['Scanner.Token'] = tokens
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
 
+        self.root = root if root is not None else os.getcwd()
+
         self.code_point: int = 0  # Increment at start of instruction outputs
+        self.word_count: int = constants.FIRST_GENERAL_MEMORY_ADDRESS  # Increment when a word (undefined memory address) is referenced.
         self.labels: Dict[str, int] = {}  # 'foo: ' statements
         self.undefined_labels: Dict[str, ParseError] = {}  # labels that have been referenced by an instruction but not defined yet, and the error referencing their first definition
         self.aliases: Dict[str, int] = {}  # 'alias' statements
+        self.sprites: List[str] = []  # sprite literals, for GPU ROM
+        self.tex_helper: TextureHelper = TextureHelper(self.root, self.err)
         self.assert_mode: Literal['native', 'interpreted', 'none'] = assert_mode
 
         self.error: Optional[ParseError] = None
@@ -322,6 +330,10 @@ class Parser:
                 f.write('-- Alias Dump --\n')
                 for alias, memory_point in self.aliases.items():
                     f.write('%s - %d\n' % (alias, memory_point))
+            if self.sprites:
+                f.write('-- Sprite Dump --\n')
+                for i, sprite in enumerate(self.sprites):
+                    f.write('%d : %s\n' % (i, repr(sprite)))
             start = False
             for t in self.output_tokens:
                 if isinstance(t, ParseToken):
@@ -350,6 +362,15 @@ class Parser:
                 elif t == ScanToken.ALIAS:
                     self.pointer += 1
                     self.parse_alias()
+                elif t == ScanToken.WORD:
+                    self.pointer += 1
+                    self.parse_word()
+                elif t == ScanToken.SPRITE:
+                    self.pointer += 1
+                    self.parse_sprite()
+                elif t == ScanToken.TEXTURE:
+                    self.pointer += 1
+                    self.parse_texture()
                 elif t == ScanToken.ASSERT:
                     self.pointer += 1
                     self.parse_assert()
@@ -375,12 +396,12 @@ class Parser:
         if label in self.labels:
             self.err('Duplicate label defined: ' + repr(label))
         self.pointer += 1
-        self.expect(ScanToken.COLON, 'Expected \':\' after label identifier' + self.hint(label, Instructions.names()))
+        self.expect(ScanToken.COLON, 'Unknown keyword, or label missing a \':\'' + self.hint(label, Instructions.names()))
         if label in self.undefined_labels:
             del self.undefined_labels[label]
         self.labels[label] = self.code_point
 
-    def parse_label_reference(self):
+    def parse_label_reference(self) -> str:
         self.expect(ScanToken.IDENTIFIER)
         label = self.next()
         if label not in self.labels and label not in self.undefined_labels:
@@ -396,6 +417,103 @@ class Parser:
         self.pointer += 1
         value = self.parse_int(Parser.VALUE)
         self.aliases[alias] = value
+
+    def parse_word(self):
+        c = self.next()
+        if c == ScanToken.IDENTIFIER:  # Single word
+            self.parse_word_with_size(1)
+        elif c == ScanToken.LBRACKET:  # Array
+            self.pointer += 1
+            self.expect(ScanToken.INTEGER, 'Expected array size after \'[\'')
+            size = self.take()
+            self.expect(ScanToken.RBRACKET, 'Missing closing \']\' in array size declaration')
+            self.parse_word_with_size(size)
+        else:
+            self.err('Expected either identifier or array size declaration after \'word\' keyword')
+
+    def parse_word_with_size(self, size: int):
+        self.parse_single_word_with_size(size)
+
+        # Allow commas to indicate additional same-size words
+        c = self.next()
+        while c == ScanToken.COMMA:
+            self.pointer += 1
+            self.parse_single_word_with_size(size)
+            c = self.next()
+
+    def parse_single_word_with_size(self, size: int):
+        if self.word_count + size - 1 >= constants.MAIN_MEMORY_SIZE:
+            self.err('Memory overflow! Tried to allocate %d bytes' % (size * 4))
+
+        self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'word\' keyword')
+        word = self.next()
+        if word in self.aliases:
+            self.err('Duplicate definition for: ' + repr(word))
+        self.pointer += 1
+        value = self.word_count
+        self.word_count += size
+        self.aliases[word] = value
+
+    def parse_texture(self):
+        self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'texture\' keyword')
+        tex = self.next()
+        if tex in self.tex_helper.textures:
+            self.err('Duplicate definition for: ' + repr(tex))
+        self.pointer += 1
+        self.expect(ScanToken.STRING, 'Expected file name after \'texture %s\'' % tex)
+        file = self.take()
+        self.tex_helper.textures[tex] = file
+
+    def parse_sprite(self):
+        self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'sprite\' keyword')
+        sprite = self.next()
+        if sprite in self.aliases:
+            self.err('Duplicate definition for: ' + repr(sprite))
+        self.aliases[sprite] = len(self.sprites)
+        self.pointer += 1
+
+        # Accept either an array or single sprite literal
+        c = self.next()
+        if c == ScanToken.LBRACKET:
+            self.pointer += 1
+            self.parse_sprite_literal_or_reference(sprite + '[0]')
+            c = self.next()
+            count = 1
+            while c != ScanToken.RBRACKET:
+                self.parse_sprite_literal_or_reference(sprite + '[%d]' % count)
+                c = self.next()
+                count += 1
+            self.pointer += 1
+        else:
+            self.parse_sprite_literal_or_reference(sprite)
+
+    def parse_sprite_literal_or_reference(self, name: str):
+        c = self.next()
+        if c == ScanToken.SPRITE_LITERAL:
+            self.pointer += 1
+            sprite = self.take()
+        elif c == ScanToken.IDENTIFIER:
+            self.pointer += 1
+            name = self.take()
+            self.expect(ScanToken.LBRACKET, 'Expected texture parameters [x y w h] after texture name')
+            self.expect(ScanToken.INTEGER, 'Expected texture parameter x')
+            tex_x = self.take()
+            self.expect(ScanToken.INTEGER, 'Expected texture parameter y')
+            tex_y = self.take()
+            self.expect(ScanToken.INTEGER, 'Expected texture parameter w')
+            tex_w = self.take()
+            self.expect(ScanToken.INTEGER, 'Expected texture parameter h')
+            tex_h = self.take()
+            self.expect(ScanToken.RBRACKET, 'Expected closing \']\' after texture parameters')
+            sprite = self.tex_helper.load_sprite(name, tex_x, tex_y, tex_w, tex_h)
+        else:
+            self.err('Expected either sprite literal or texture to follow \'sprite\'')
+            sprite = None
+
+        if len(self.sprites) >= constants.GPU_MEMORY_SIZE:
+            self.err('GPU Memory overflow, cannot allocate space for sprite \'%s\'' % name)
+
+        self.sprites.append(sprite)
 
     def parse_assert(self):
         p1 = self.parse_address()
@@ -490,7 +608,18 @@ class Parser:
             if alias not in self.aliases:
                 self.err('Undefined alias \'%s\'%s' % (alias, self.hint(alias, self.aliases.keys())))
             self.pointer += 1
-            return self.check_interval(self.aliases[alias], interval)
+            value = self.aliases[alias]
+
+            # Identifiers can all have optional array index declarations following them
+            # This is to support word and sprite arrays, when using constant indexes
+            t = self.next()
+            if t == ScanToken.LBRACKET:
+                self.pointer += 1
+                self.expect(ScanToken.INTEGER, 'Expected integer offset after \'[\'')
+                value += self.take()
+                self.expect(ScanToken.RBRACKET, 'Missing closing \']\' in array offset')
+
+            return self.check_interval(value, interval)
         elif t == ScanToken.INTEGER:
             return self.parse_int(interval)
         self.err('Expected integer or named constant value')

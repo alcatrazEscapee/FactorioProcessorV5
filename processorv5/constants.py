@@ -1,6 +1,13 @@
 from enum import Enum, IntEnum
 
 
+GPU_MEMORY_SIZE = 64
+MAIN_MEMORY_SIZE = 1024
+INSTRUCTION_MEMORY_SIZE = 7680
+
+FIRST_GENERAL_MEMORY_ADDRESS = 20
+
+
 class Instructions(Enum):
     """
     Assembly level instructions, identified by their asm name
@@ -95,6 +102,16 @@ class Instructions(Enum):
     NOOP = 'noop'  # noop -> add r0 r0 r0
     SET = 'set'  # set X Y -> add X Y r0
     SETI = 'seti'  # set X #M -> addi X r0 #M
+    BR = 'br'  # br L -> beq r0 r0 L
+
+    GFLUSH = 'gflush'
+    GLSI = 'glsi'
+    GLSM = 'glsm'
+    GLSS = 'glss'
+    GCB = 'gcb'
+    GCI = 'gci'
+    GMV = 'gvm'
+    GMVI = 'gmvi'
 
 
 class Opcodes(IntEnum):
@@ -158,6 +175,7 @@ class Opcodes(IntEnum):
     RET = 50
     HALT = 51
     ASSERT = 52
+    GPU = 53
 
 
 class Registers(IntEnum):
@@ -182,3 +200,22 @@ class Registers(IntEnum):
     R14 = 14
     R15 = 15
     R16 = 16
+
+
+class GPUFunction(IntEnum):
+    G_CLEAR = 0
+    G_NOR = 1
+    G_ERASE = 2
+    G_DRAW_NEGATIVE = 3
+    G_HIGHLIGHT = 4
+    G_NEGATIVE = 5
+    G_TOGGLE = 6
+    G_NAND = 7
+    G_ERASE_NEGATIVE = 8
+    G_TOGGLE_NEGATIVE = 9
+    G_NOOP = 10
+    G_DRAW_ALPHA_NEGATIVE = 11
+    G_DRAW = 12
+    G_HIGHLIGHT_NEGATIVE = 13
+    G_DRAW_ALPHA = 14
+    G_FULL = 15

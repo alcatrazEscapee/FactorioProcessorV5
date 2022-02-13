@@ -14,11 +14,20 @@ class ScanToken(IntEnum):
     ALIAS = enum.auto()
     ASSERT = enum.auto()
     INTEGER = enum.auto()
+    WORD = enum.auto()
+    SPRITE = enum.auto()
+    INCLUDE = enum.auto()
+    TEXTURE = enum.auto()
+    SPRITE_LITERAL = enum.auto()
+    STRING = enum.auto()
     AT = enum.auto()
     DOT = enum.auto()
     COLON = enum.auto()
     EQUALS = enum.auto()
     MINUS = enum.auto()
+    LBRACKET = enum.auto()
+    RBRACKET = enum.auto()
+    COMMA = enum.auto()
     EOF = enum.auto()
     ERROR = enum.auto()
 
@@ -45,18 +54,26 @@ class Scanner:
     NUMERIC = set('0123456789')
     NUMERIC_BINARY = set('01')
     NUMERIC_HEX = set('0123456789abcdefABCDEF')
+    SPRITE = set('.#')
     IDENTIFIER = IDENTIFIER_START | NUMERIC
     INSTRUCTIONS = {i.value for i in Instructions}
     REGISTERS = {i.name.lower() for i in Registers}
     KEYWORDS = {
         'alias': ScanToken.ALIAS,
-        'assert': ScanToken.ASSERT
+        'assert': ScanToken.ASSERT,
+        'word': ScanToken.WORD,
+        'sprite': ScanToken.SPRITE,
+        'include': ScanToken.INCLUDE,
+        'texture': ScanToken.TEXTURE
     }
     SYNTAX = {
         '@': ScanToken.AT,
         '.': ScanToken.DOT,
         ':': ScanToken.COLON,
-        '=': ScanToken.EQUALS
+        '=': ScanToken.EQUALS,
+        '[': ScanToken.LBRACKET,
+        ']': ScanToken.RBRACKET,
+        ',': ScanToken.COMMA
     }
     SIGNED_INT = utils.interval_bitfield(32, True)
     UNSIGNED_INT = utils.interval_bitfield(32, False)
@@ -64,7 +81,7 @@ class Scanner:
     Token = Union[ScanToken, ScanError, int, str]
 
     def __init__(self, text: str):
-        self.text: str = text + '\n'  # ensure we always end with a new line
+        self.text: str = text + '\n'  # ensure we always end with a newline
         self.pointer: int = 0
         self.output_tokens: List[Scanner.Token] = []
         self.locations: List[Tuple[int, int]] = []
@@ -118,25 +135,29 @@ class Scanner:
                 if c in Scanner.NUMERIC_BINARY:
                     self.scan_binary_integer()
                 else:
-                    self.err('Expected binary integer after 0b')
+                    self.err('Expected binary digit after \'0b\'')
             elif c == 'x':
                 self.pointer += 1
                 c = self.next()
                 if c in Scanner.NUMERIC_HEX:
                     self.scan_hex_integer()
                 else:
-                    self.err('Expected hex integer after 0x')
+                    self.err('Expected hex digit after \'0x\'')
             elif c not in Scanner.NUMERIC:
                 # This is actually a decimal '0', with no numeric characters following
                 # This explicitly disallows '00' as an alternative zero
                 self.push(ScanToken.INTEGER, 0)
             else:
-                self.err('Undefined integer prefix: 0%s' % c)
+                self.err('Undefined integer prefix: \'0%s\'' % c)
         elif c == '#':
             self.scan_comment()
+        elif c == '"':
+            self.scan_string()
         elif c in Scanner.SYNTAX:
             self.pointer += 1
             self.push(Scanner.SYNTAX[c])
+        elif c == '`':
+            self.scan_sprite_literal()
         else:
             self.pointer += 1
             self.err('Unknown token: \'%s\'' % str(c))
@@ -192,6 +213,49 @@ class Scanner:
         while c not in Scanner.NEWLINE:
             self.pointer += 1
             c = self.next()
+
+    def scan_string(self):
+        self.pointer += 1
+        c = self.next()
+        acc = ''
+        while c != '"' and c not in Scanner.NEWLINE:
+            acc += c
+            self.pointer += 1
+            c = self.next()
+        if c == '"':
+            self.pointer += 1
+            self.push(ScanToken.STRING, acc)
+        else:
+            self.err('Unterminated string literal')
+
+    def scan_sprite_literal(self):
+        self.pointer += 1
+        c = self.next()
+        lines = []
+        line = ''
+        while c != '`':
+            if c in Scanner.NEWLINE:
+                if line != '':
+                    lines.append(line)
+                    line = ''
+            elif c in Scanner.SPRITE:
+                line += c
+            elif c in Scanner.WHITESPACE:
+                pass
+            else:
+                self.err('Illegal token in sprite literal: \'%s\'' % c)
+            self.pointer += 1
+            c = self.next()
+
+        if not lines:
+            self.err('Empty sprite literal not allowed')
+        if any(len(line) != len(lines[0]) for line in lines):
+            self.err('Sprite literal lines must all be of the same width')
+        if any(len(line) > 32 for line in lines) or len(lines) > 32:
+            self.err('Sprite literal must be within [32 x 32]')
+
+        self.push(ScanToken.SPRITE_LITERAL, ','.join(lines))
+        self.pointer += 1
 
     def check_interval(self, value: int, interval: Interval) -> int:
         if interval.check(value):

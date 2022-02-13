@@ -21,14 +21,14 @@ class ConstantCombinator(Entity):
         # Signal conditions
         if len(defined_signals.values) > ConstantCombinator.MAX_SIGNALS:
             raise TypeError('can only define [0, %d] signals, not %d' % (ConstantCombinator.MAX_SIGNALS, len(defined_signals.values)))
-        if signal_indexes is None:
+        if synthetic := (signal_indexes is None):
             signal_indexes = list(defined_signals.values.keys())
 
         self.defined_signals = defined_signals
         self.enabled = enabled
         self.signal_indexes = signal_indexes
 
-        self.key = '%s %s' % (
+        self.key = '<synthetic>' if synthetic else '%s %s' % (
             ''.join(Signal.from_formal(self.signal_indexes[i]) for i in range(10)),
             ''.join(Signal.from_formal(self.signal_indexes[i + 10]) for i in range(10)),
         )

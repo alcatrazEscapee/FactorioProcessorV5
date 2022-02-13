@@ -1,0 +1,4 @@
+STRING 'this is a string literal!@#$%^&*(123456'
+STRING 'nonempty string'
+STRING ''
+EOF
