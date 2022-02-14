@@ -1,0 +1,4 @@
+ERROR [Errno 2] No such file or directory: 'C:\\Users\\alex\\Documents\\Projects\\Factorio\\ProcessorV5\\test\\assets\\parser\\something_missing.s'
+Reading file referenced from 'include "./something_missing.s"' on line 1:
+include "./something_missing.s"
+------------------------------^

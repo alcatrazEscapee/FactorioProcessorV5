@@ -1,10 +1,10 @@
-import os
 from enum import IntEnum
 from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
 from utils import Interval, TextureHelper
 from constants import Opcodes, Instructions, Registers, GPUInstruction, GPUFunction
 from phases.scanner import Scanner, ScanToken
 
+import os
 import enum
 import utils
 import constants
@@ -314,12 +314,14 @@ class Parser:
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
-    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none', root: str = None):
+    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none', file: str = None):
         self.input_tokens: List['Scanner.Token'] = tokens
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
 
-        self.root = root if root is not None else os.getcwd()
+        self.file: str = utils.unique_path(file)
+        self.root: str = os.path.dirname(self.file)
+        self.includes = {self.file}
 
         self.code_point: int = 0  # Increment at start of instruction outputs
         self.word_count: int = constants.FIRST_GENERAL_MEMORY_ADDRESS  # Increment when a word (undefined memory address) is referenced.
@@ -385,6 +387,9 @@ class Parser:
                 elif t == ScanToken.TEXTURE:
                     self.pointer += 1
                     self.parse_texture()
+                elif t == ScanToken.INCLUDE:
+                    self.pointer += 1
+                    self.parse_include()
                 elif t == ScanToken.ASSERT:
                     self.pointer += 1
                     self.parse_assert()
@@ -477,6 +482,41 @@ class Parser:
         self.expect(ScanToken.STRING, 'Expected file name after \'texture %s\'' % tex)
         file = self.take()
         self.tex_helper.textures[tex] = file
+
+    def parse_include(self):
+        self.expect(ScanToken.STRING, 'Expected file identifier after \'include\' keyword')
+        ref = self.next()
+        file = utils.unique_path(os.path.join(self.root, ref))
+        if file not in self.includes:  # Silently allow recursive includes
+            self.includes.add(file)
+            try:
+                text = utils.read_file(file)
+            except Exception as e:
+                return self.err('%s\nReading file referenced from \'include "%s"\'' % (e, ref))
+
+            scanner = Scanner(text)
+            if not scanner.scan():
+                return self.err('%s\nIn file \'%s\', referenced from \'include "%s"\'' % (scanner.error, file, ref))
+
+            # Link sub-parser's output to this parser
+            parser = Parser(scanner.output_tokens, self.assert_mode, file)
+            parser.output_tokens = self.output_tokens
+            parser.word_count = self.word_count
+            parser.labels = self.labels
+            parser.aliases = self.aliases
+            parser.sprites = self.sprites
+            parser.includes = self.includes
+            if not parser.parse():
+                parser.output_tokens.pop()  # Remove the last error token, to avoid duplicating it
+                parser.output_tokens.pop()
+                parser.error.trace(scanner)
+                return self.err('%s\nIn file \'%s\', referenced from \'include "%s"\'' % (parser.error, file, ref))
+
+            # Remove trailing EoF
+            if parser.output_tokens[-1] != ParseToken.EOF:
+                return self.err('Parser terminated too early!\nIn file \'%s\', referenced from \'include "%s"\n' % (file, ref))
+            parser.output_tokens.pop()
+        self.pointer += 1
 
     def parse_sprite(self):
         self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'sprite\' keyword')

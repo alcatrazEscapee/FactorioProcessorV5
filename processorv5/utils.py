@@ -105,6 +105,9 @@ def write_file(file: str, contents: str):
     with open(file, 'w', encoding='utf-8') as f:
         f.write(contents)
 
+def unique_path(file: str) -> str:
+    return os.path.normpath(os.path.abspath(file))
+
 
 class TextureHelper:
 

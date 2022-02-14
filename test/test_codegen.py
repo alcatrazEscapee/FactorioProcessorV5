@@ -23,7 +23,7 @@ def gen(file: str):
 
     assert scanner.scan()
 
-    parser = Parser(scanner.output_tokens)
+    parser = Parser(scanner.output_tokens, file=TEST_DIR + file + '.s')
 
     assert parser.parse()
 
