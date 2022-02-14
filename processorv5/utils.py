@@ -1,5 +1,6 @@
 from typing import NamedTuple, Union, Dict, List, Tuple, Callable
 from numpy import int32, uint64
+from constants import GPUImageDecoder
 from PIL import Image
 
 import os
@@ -149,6 +150,13 @@ class ImageBuffer:
     @staticmethod
     def unpack(s: str) -> 'ImageBuffer':
         return ImageBuffer(tuple(s.split('|')))
+
+    @staticmethod
+    def unpack_decoder(f: GPUImageDecoder, data: int32) -> 'ImageBuffer':
+        data = tuple('.#'[bit_int32(data, i)] for i in range(32))
+        width = 1 << (5 - f.value)
+        height = 1 << f.value
+        return ImageBuffer(tuple(tuple(data[x + width * y] for x in range(width)) for y in range(height)))
 
     @staticmethod
     def create(func: Callable[[int, int], str]) -> 'ImageBuffer':

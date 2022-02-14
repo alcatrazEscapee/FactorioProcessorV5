@@ -1,5 +1,5 @@
 from typing import Tuple, List, Dict
-from constants import Opcodes, GPUInstruction, GPUFunction
+from constants import Opcodes, GPUInstruction, GPUFunction, GPUImageDecoder
 from phases.parser import Parser, ParseToken
 
 import utils
@@ -76,6 +76,9 @@ class CodeGen:
         spec = Opcodes(opcode)
         if spec == Opcodes.HALT or spec == Opcodes.RET:
             self.output_code.append(opcode << 58)
+        elif spec == Opcodes.CALL:
+            offset = self.gen_branch_target()
+            self.output_code.append((opcode << 58) | (offset << 16))
         else:
             raise NotImplementedError
 
@@ -90,9 +93,13 @@ class CodeGen:
         elif func == GPUInstruction.GLSI:
             imm: int = self.take()
             self.output_code.append(instruction | utils.to_bitfield(imm, 16, 32))
-        elif func == GPUInstruction.GLSM:
+        elif func == GPUInstruction.GLS:
             p1 = self.gen_address()
             self.output_code.append(instruction | (p1 << 32))
+        elif func == GPUInstruction.GLSD:
+            p1 = self.gen_address()
+            f: GPUImageDecoder = self.take()
+            self.output_code.append(instruction | utils.to_bitfield(f.value, 4, 51) | (p1 << 32))
         elif func == GPUInstruction.GCB or func == GPUInstruction.GCI:
             f: GPUFunction = self.take()
             self.output_code.append(instruction | utils.to_bitfield(f.value, 4, 51))

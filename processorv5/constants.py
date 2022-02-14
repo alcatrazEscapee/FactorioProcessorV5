@@ -8,9 +8,13 @@ INSTRUCTION_MEMORY_SIZE = 7680
 FIRST_GENERAL_MEMORY_ADDRESS = 20
 
 COUNTER_PORT = 2000
+CONTROL_PORT = 3000
+RANDOM_PORT = 4000
 
 SCREEN_WIDTH = 32
 SCREEN_HEIGHT = 32
+
+STACK_POINTER_START = 1020
 
 
 class Instructions(Enum):
@@ -111,8 +115,8 @@ class Instructions(Enum):
 
     GFLUSH = 'gflush'
     GLSI = 'glsi'
-    GLSM = 'glsm'
-    GLSS = 'glss'
+    GLS = 'gls'
+    GLSD = 'glsd'
     GCB = 'gcb'
     GCI = 'gci'
     GMV = 'gmv'
@@ -210,8 +214,8 @@ class Registers(IntEnum):
 class GPUInstruction(IntEnum):
     GFLUSH = 0
     GLSI = 1
-    GLSM = 2
-    GLSS = 3
+    GLS = 2
+    GLSD = 3
     GCB = 4
     GCI = 5
     GMV = 6
@@ -241,3 +245,13 @@ class GPUFunction(IntEnum):
 
     def apply(self, lhs: bool, rhs: bool) -> bool:
         return ((self.value >> ((rhs << 1) | lhs)) & 1) != 0
+
+
+class GPUImageDecoder(IntEnum):
+    """ Width x Height """
+    G_32x1 = 0
+    G_16x2 = 1
+    G_8x4 = 2
+    G_4x8 = 3
+    G_2x16 = 4
+    G_1x32 = 5

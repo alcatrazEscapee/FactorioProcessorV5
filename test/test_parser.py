@@ -3,7 +3,6 @@ from phases import Scanner, Parser
 import utils
 import testfixtures
 
-TEST_DIR = 'assets/parser/'
 
 def test_address_constant(): parse('address_constant')
 def test_address_constant_out_of_range(): parse('address_constant_out_of_range')
@@ -42,6 +41,7 @@ def test_sprite(): parse('sprite')
 def test_sprite_array(): parse('sprite_array')
 def test_sprite_reference(): parse('sprite_reference')
 def test_sprite_reference_array(): parse('sprite_reference_array')
+def test_unknown_instruction(): parse('unknown_instruction')
 def test_word(): parse('word')
 def test_word_array(): parse('word_array')
 def test_word_array_with_comma(): parse('word_array_with_comma')
@@ -49,15 +49,16 @@ def test_word_with_comma(): parse('word_with_comma')
 
 
 def parse(file: str):
-    scan_text = utils.read_or_create_empty(TEST_DIR + file + '.s')
+    file = 'assets/parser/%s.s' % file
+    scan_text = utils.read_or_create_empty(file)
     scanner = Scanner(scan_text)
 
     assert scanner.scan()
 
-    parser = Parser(scanner.output_tokens, file=TEST_DIR + file + '.s')
+    parser = Parser(scanner.output_tokens, file=file)
     parser.parse()
-    parser.trace(TEST_DIR + file + '.out', scanner)
-    actual_text = utils.read_or_create_empty(TEST_DIR + file + '.out')
-    expected_text = utils.read_or_create_empty(TEST_DIR + file + '.trace')
+    parser.trace(file.replace('.s', '.out'), scanner)
+    actual_text = utils.read_or_create_empty(file.replace('.s', '.out'))
+    expected_text = utils.read_or_create_empty(file.replace('.s', '.trace'))
 
     testfixtures.compare(expected=expected_text, actual=actual_text)

@@ -4,8 +4,6 @@ import utils
 import dissasembler
 import testfixtures
 
-TEST_DIR = 'assets/codegen/'
-
 
 def test_empty(): gen('empty')
 def test_instructions_type_a(): gen('instructions_type_a')
@@ -18,19 +16,20 @@ def test_instructions_type_f(): gen('instructions_type_f')
 
 
 def gen(file: str):
-    scan_text = utils.read_or_create_empty(TEST_DIR + file + '.s')
+    file = 'assets/codegen/%s.s' % file
+    scan_text = utils.read_or_create_empty(file)
     scanner = Scanner(scan_text)
 
     assert scanner.scan()
 
-    parser = Parser(scanner.output_tokens, file=TEST_DIR + file + '.s')
+    parser = Parser(scanner.output_tokens, file=file)
 
     assert parser.parse()
 
     codegen = CodeGen(parser)
     codegen.gen()
     actual_text = '\n'.join(dissasembler.decode(codegen.output_code)) + '\n'
-    utils.write_file(TEST_DIR + file + '.out', actual_text)
-    expected_text = utils.read_or_create_empty(TEST_DIR + file + '.trace')
+    utils.write_file(file.replace('.s', '.out'), actual_text)
+    expected_text = utils.read_or_create_empty(file.replace('.s', '.trace'))
 
     testfixtures.compare(actual=actual_text, expected=expected_text)

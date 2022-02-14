@@ -1,6 +1,6 @@
 0000 | gflush
 0001 | glsi 23
-0002 | glsm @@1
+0002 | gls @@1
 0003 | gcb G_TOGGLE
 0004 | gci G_DRAW_NEGATIVE
 0005 | gmv @3 @4

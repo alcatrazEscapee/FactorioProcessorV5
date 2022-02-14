@@ -19,12 +19,13 @@ def read_command_line_args():
     parser.add_argument('-o', action='store_true', dest='output_binary', help='Output a binary file')
     parser.add_argument('-v', action='store_true', dest='output_viewable', help='Output a hybrid view/disassembly file')
     parser.add_argument('-b', action='store_true', dest='output_blueprint', help='Output a blueprint string for a 60KB ROM')
+    parser.add_argument('-a', choices=('none', 'native', 'interpreted'), default='ignore', dest='assert_mode', help='The assertion handling mode')
     parser.add_argument('--out', type=str, help='The output file name')
     return parser.parse_args()
 
 def main(args: argparse.Namespace):
     input_text = utils.read_file(args.file)
-    asm = Assembler(input_text)
+    asm = Assembler(args.file, input_text, args.assert_mode)
     if not asm.assemble():
         print(asm.error)
         sys.exit(1)
@@ -97,7 +98,8 @@ def encode_as_blueprint(code: List[int]):
 
 class Assembler:
 
-    def __init__(self, input_text: str, assert_mode: Literal['native', 'interpreted', 'none'] = 'none'):
+    def __init__(self, file_name: str, input_text: str, assert_mode: Literal['native', 'interpreted', 'none'] = 'none'):
+        self.file_name = file_name
         self.input_text = input_text
         self.assert_mode = assert_mode
 
@@ -112,7 +114,7 @@ class Assembler:
             self.error = 'Scanner error:\n%s' % scanner.error
             return False
 
-        parser = Parser(scanner.output_tokens, self.assert_mode)
+        parser = Parser(scanner.output_tokens, self.assert_mode, self.file_name)
         if not parser.parse():
             parser.error.trace(scanner)
             self.error = 'Parser error:\n%s' % parser.error

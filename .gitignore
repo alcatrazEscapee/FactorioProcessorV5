@@ -3,6 +3,9 @@
 !/.gitignore
 !/requirements.txt
 
+!/asm/textures/**/*.png
+!/asm/**/*.s
+
 !/processorv5/**/*.py
 !/test/**/*.py
 

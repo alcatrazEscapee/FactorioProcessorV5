@@ -1,15 +1,17 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
-
 from typing import List, Tuple, Dict, Callable, NamedTuple
 from enum import Enum
-from constants import Opcodes, Registers, GPUInstruction, GPUFunction
+from constants import Opcodes, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from utils import ImageBuffer
 from numpy import int32, uint64
 
 import utils
+import numpy
 import constants
 import dissasembler
+
+numpy.seterr(all='ignore')
 
 
 class IRData(NamedTuple):
@@ -54,6 +56,10 @@ class CounterDevice(Device):
     def start(self): self.tick_count = int32(0)
     def tick(self): self.tick_count += int32(1)
 
+class RandomDevice(Device):
+
+    def owns(self, addr: int32) -> bool: return addr == constants.RANDOM_PORT
+    def get(self, addr: int32) -> int32: return int32(numpy.random.randint(-2147483648, 2147483647, dtype=int32))
 
 class GPU:
 
@@ -69,8 +75,10 @@ class GPU:
             self.flush()
         elif ir.gpu_opcode == GPUInstruction.GLSI:
             self.image = self.gpu_mem_get(ir.op1)
-        elif ir.gpu_opcode == GPUInstruction.GLSM:
+        elif ir.gpu_opcode == GPUInstruction.GLS:
             self.image = self.gpu_mem_get(self.processor.mem_get_operand(ir.op1))
+        elif ir.gpu_opcode == GPUInstruction.GLSD:
+            self.image = ImageBuffer.unpack_decoder(GPUImageDecoder(ir.gpu_function), self.processor.mem_get_operand(ir.op1))
         elif ir.gpu_opcode == GPUInstruction.GCB:
             self.buffer = self.compose(GPUFunction(ir.gpu_function))
         elif ir.gpu_opcode == GPUInstruction.GCI:
@@ -139,7 +147,7 @@ class Processor:
         self.error_code = int32(0)
 
         # Peripheral Devices
-        self.devices: List[Device] = [ZeroRegisterDevice(), CounterDevice()]
+        self.devices: List[Device] = [ZeroRegisterDevice(), CounterDevice(), RandomDevice()]
         self.gpu = GPU(self)
 
     def load(self, instructions: List[int]):
@@ -381,8 +389,8 @@ INSTRUCTIONS: Tuple[Instruction] = validate(
     ArithmeticImmediateInstruction(Opcodes.ADDI, lambda y, imm: y + imm),
     ArithmeticImmediateInstruction(Opcodes.SUBIR, lambda y, imm: imm - y),
     ArithmeticImmediateInstruction(Opcodes.MULI, lambda y, imm: y * imm),
-    ArithmeticImmediateInstruction(Opcodes.DIVI, lambda y, imm: y / imm),
-    ArithmeticImmediateInstruction(Opcodes.DIVIR, lambda y, imm: imm / y),
+    ArithmeticImmediateInstruction(Opcodes.DIVI, lambda y, imm: y // imm),
+    ArithmeticImmediateInstruction(Opcodes.DIVIR, lambda y, imm: imm // y),
     ArithmeticImmediateInstruction(Opcodes.POWI, lambda y, imm: y ** imm),
     ArithmeticImmediateInstruction(Opcodes.POWIR, lambda y, imm: imm ** y),
     ArithmeticImmediateInstruction(Opcodes.MODI, lambda y, imm: y % imm),

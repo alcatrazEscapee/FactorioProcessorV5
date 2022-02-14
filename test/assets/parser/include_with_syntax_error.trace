@@ -1,6 +1,6 @@
-ERROR Unknown keyword, or label missing a ':' on line 2:
-
-^
+ERROR Unknown keyword, or label missing a ':' on line 1:
+foobar
+-----^
 In file 'C:\Users\alex\Documents\Projects\Factorio\ProcessorV5\test\assets\parser\include_syntax_error.s', referenced from 'include "./include_syntax_error.s"' on line 1:
 include "./include_syntax_error.s"
 ---------------------------------^

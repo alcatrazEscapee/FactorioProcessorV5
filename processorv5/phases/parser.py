@@ -1,7 +1,7 @@
 from enum import IntEnum
 from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
 from utils import Interval, TextureHelper
-from constants import Opcodes, Instructions, Registers, GPUInstruction, GPUFunction
+from constants import Opcodes, Instructions, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from phases.scanner import Scanner, ScanToken
 
 import os
@@ -279,6 +279,8 @@ class Parser:
         Instructions.BGEI: TypeDRInstruction(ParseToken.BGTI, ParseToken.BLTI, lambda p, rev, imm: p.check_interval(imm + 1 if rev else imm - 1, Parser.IMMEDIATE_SIGNED)),
 
         # Special
+        Instructions.CALL: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.CALL, ParseToken.LABEL, p.parse_label_reference())),
+        Instructions.RET: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.RET)),
         Instructions.HALT: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.HALT)),
 
         # Custom
@@ -290,8 +292,8 @@ class Parser:
         # GPU
         Instructions.GFLUSH: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GFLUSH)),
         Instructions.GLSI: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLSI, p.parse_gpu_address())),
-        Instructions.GLSM: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLSM, *p.parse_address())),
-        #todo: glss
+        Instructions.GLS: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLS, *p.parse_address())),
+        Instructions.GLSD: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GLSD, *p.parse_address(), p.parse_gpu_decoder())),
         Instructions.GCB: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GCB, p.parse_gpu_function())),
         Instructions.GCI: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GCI, p.parse_gpu_function())),
         Instructions.GMV: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GMV, *p.parse_address(), *p.parse_address())),
@@ -299,7 +301,7 @@ class Parser:
     }.items()}
 
     INSTRUCTION_TYPES = {
-        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E, ParseToken.TYPE_F
+        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E, ParseToken.TYPE_F, ParseToken.ASSERT
     }
 
     Token = Union[ParseToken, ParseError, GPUInstruction, GPUFunction, int, str]
@@ -359,7 +361,7 @@ class Parser:
                 elif isinstance(t, ParseError):
                     t.trace(scanner)
                     f.write(' ' + str(t))
-                elif isinstance(t, GPUInstruction) or isinstance(t, GPUFunction):
+                elif isinstance(t, GPUInstruction) or isinstance(t, GPUFunction) or isinstance(t, GPUImageDecoder):
                     f.write(' ' + t.name)
                 else:
                     f.write(' ' + repr(t))
@@ -415,7 +417,7 @@ class Parser:
         if label in self.labels:
             self.err('Duplicate label defined: ' + repr(label))
         self.pointer += 1
-        self.expect(ScanToken.COLON, 'Unknown keyword, or label missing a \':\'' + self.hint(label, Instructions.names()))
+        self.expect(ScanToken.COLON, 'Unknown keyword, or label missing a \':\'' + self.hint(label, Instructions.names()), offset=-1)
         if label in self.undefined_labels:
             del self.undefined_labels[label]
         self.labels[label] = self.code_point
@@ -701,6 +703,16 @@ class Parser:
         except KeyError:
             self.err('Not a valid GPU function: \'%s\'' % func)
 
+    def parse_gpu_decoder(self) -> GPUImageDecoder:
+        self.expect(ScanToken.IDENTIFIER, 'Expected the name of a GPU image decoder')
+        func = self.next()
+        try:
+            func = GPUImageDecoder[func]
+            self.pointer += 1
+            return func
+        except KeyError:
+            self.err('Not a valid GPU image decoder: \'%s\'' % func)
+
     def check_interval(self, value: int, interval: Interval) -> int:
         if interval.check(value):
             return value
@@ -719,25 +731,27 @@ class Parser:
         self.pointer += 1
         return t
 
-    def expect(self, expected_token: ScanToken, reason: Optional[str] = None):
+    def expect(self, expected_token: ScanToken, reason: Optional[str] = None, offset: int = 0):
         t = self.next()
         if t != expected_token:
             if reason is None:
                 reason = 'Expected %s' % expected_token.name
+            self.pointer += offset
             self.err(reason)
         self.pointer += 1
 
     def push(self, *tokens: 'Parser.Token'):
         for token in tokens:
-            if token in Parser.INSTRUCTION_TYPES:
+            if isinstance(token, ParseToken) and token in Parser.INSTRUCTION_TYPES:
                 self.code_point += 1
             self.output_tokens.append(token)
 
     def hint(self, token: str, values: Iterable[str]) -> str:
         # Find a similar token and issue a hint
-        distance, value = min(((Levenshtein.distance(value, token), value) for value in values))
-        if distance <= 2:
-            return ' (Did you mean \'%s\'?)' % value
+        if values:
+            distance, value = min(((Levenshtein.distance(value, token), value) for value in values))
+            if distance <= 2:
+                return ' (Did you mean \'%s\'?)' % value
         return ''
 
     def err(self, reason: str):
