@@ -1,9 +1,21 @@
 # Pong
 
+include "./7seg_numbers.s"
+texture TEXTURE_PONG "./textures/pong.png"
+
+sprite SPRITE_TEXT_YOU TEXTURE_PONG [ 0 0 22 7 ]
+sprite SPRITE_TEXT_LOSE TEXTURE_PONG [ 0 6 22 7 ]
+sprite SPRITE_TEXT_WIN TEXTURE_PONG [ 0 13 22 7 ]
+
+alias WINNING_SCORE 4  # Score needed to win, must be <= 10
+
 alias TICK_DELTA 100
 
 alias BALL_WIDTH 2
 alias PADDLE_HEIGHT 6
+
+alias MIN_PADDLE_Y 0
+alias MAX_PADDLE_Y 26 # 32 - 6
 
 word nextTick
 word ballX, ballY
@@ -54,19 +66,23 @@ main_ai_move:
     beq r1 @ballY main_player_move
     bgt r1 @ballY main_ai_move_down
 main_ai_move_up:
+    blei @computerY MIN_PADDLE_Y main_player_move
     subi @computerY @computerY 1
     br main_player_move
 main_ai_move_down:
+    bgei @computerY MAX_PADDLE_Y main_player_move
     addi @computerY @computerY 1
 
 main_player_move:
-    bnei @@CONTROL_UP 1 main_player_move_down
+    bnei @@CONTROL_UP 1 main_player_move_after_up
+    blei @playerY MIN_PADDLE_Y main_player_move_after_up
     subi @playerY @playerY 1
-    br main_player_move_end
-main_player_move_down:
-    bnei @@CONTROL_DOWN 1 main_player_move_end
+main_player_move_after_up:
+
+    bnei @@CONTROL_DOWN 1 main_player_move_after_down
+    bgei @playerY MAX_PADDLE_Y main_player_move_after_down
     addi @playerY @playerY 1
-main_player_move_end:
+main_player_move_after_down:
 
 main_ball_move:
     bnei @ballVY 1 main_ball_move_up
@@ -105,22 +121,32 @@ main_ball_move_all_done:
 main_check_win:
     bnei @ballX 0 main_check_win_1
     addi @computerScore @computerScore 1
+    bgei @computerScore WINNING_SCORE main_display_loss
     br main
 main_check_win_1:
     bnei @ballX 30 main_graphics
     addi @playerScore @playerScore 1
+    bgei @playerScore WINNING_SCORE main_display_win
     br main
+
 main_graphics:
-    # Clear Screen -> Draw Player -> Draw Computer -> Draw Ball -> Flush
-    gcb G_CLEAR
-    glsi SPRITE_PADDLE
+    gcb G_CLEAR  # Clear screen
+    glsi SPRITE_PADDLE  # Player paddle
     gmv @playerX @playerY
     gcb G_DRAW_ALPHA
-    glsi SPRITE_PADDLE
+    glsi SPRITE_PADDLE  # Computer paddle
     gmv @computerX @computerY
     gcb G_DRAW_ALPHA
-    glsi SPRITE_BALL
+    glsi SPRITE_BALL  # Ball
     gmv @ballX @ballY
+    gcb G_DRAW_ALPHA
+    addi r1 @playerScore SPRITE_DIGITS  # Player score (0-9)
+    gls r1
+    gmvi 11 1
+    gcb G_DRAW_ALPHA
+    addi r1 @computerScore SPRITE_DIGITS  # Computer score (0-9)
+    gls r1
+    gmvi 18 1
     gcb G_DRAW_ALPHA
     gflush
 
@@ -129,3 +155,25 @@ main_wait:
     bgti r1 0 main_wait
     addi @nextTick @@COUNTER TICK_DELTA
     br main_loop
+
+main_display_loss:
+    gcb G_CLEAR
+    glsi SPRITE_TEXT_YOU
+    gmvi 5 8
+    gcb G_DRAW_ALPHA
+    glsi SPRITE_TEXT_LOSE
+    gmvi 5 14
+    gcb G_DRAW_ALPHA
+    gflush
+    halt
+
+main_display_win:
+    gcb G_CLEAR
+    glsi SPRITE_TEXT_YOU
+    gmvi 5 8
+    gcb G_DRAW_ALPHA
+    glsi SPRITE_TEXT_WIN
+    gmvi 5 14
+    gcb G_DRAW_ALPHA
+    gflush
+    halt
