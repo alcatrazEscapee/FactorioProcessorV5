@@ -1,4 +1,4 @@
-from typing import Tuple, List, Dict
+from typing import List
 from constants import Opcodes, GPUInstruction, GPUFunction, GPUImageDecoder
 from phases.parser import Parser, ParseToken
 
@@ -11,7 +11,6 @@ class CodeGen:
         self.input_tokens = parser.output_tokens
         self.labels = parser.labels
         self.output_code: List[int] = []
-        self.asserts: Dict[int, Tuple[int, int]] = {}
         self.sprites: List[str] = parser.sprites
         self.pointer = 0
 
@@ -113,10 +112,8 @@ class CodeGen:
             self.err()
 
     def gen_assert(self):
-        # Interpreted assert - output the assert data to a different stream and just output a single 'assert' instruction to code
-        p1, imm = self.gen_address(), self.gen_immediate32()
-        self.output_code.append(Opcodes.ASSERT.value << 58)
-        self.asserts[len(self.output_code) - 1] = (p1, imm)
+        p1, imm = self.gen_address(), self.gen_immediate26()
+        self.output_code.append((Opcodes.ASSERT.value << 58) | (imm << 32) | (p1 << 0))
 
     def gen_opcode(self) -> int:
         value: ParseToken = self.take()
@@ -144,10 +141,6 @@ class CodeGen:
     def gen_immediate26(self) -> int:
         self.expect(ParseToken.IMMEDIATE_26)
         return utils.to_signed_bitfield(self.take(), 26, 0)
-
-    def gen_immediate32(self) -> int:
-        self.expect(ParseToken.IMMEDIATE_32)
-        return self.take()
 
     def eof(self) -> bool:
         return self.pointer >= len(self.input_tokens)

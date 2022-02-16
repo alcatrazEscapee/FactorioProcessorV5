@@ -12,7 +12,7 @@ def read_command_line_args():
 
 
 def main(args: argparse.Namespace):
-    with open('../assets/60kb_rom.blueprint', 'r', encoding='utf-8') as f:
+    with open('../blueprints/60kb_rom.blueprint', 'r', encoding='utf-8') as f:
         bp = f.read()
 
     js = decode_blueprint_string(bp)

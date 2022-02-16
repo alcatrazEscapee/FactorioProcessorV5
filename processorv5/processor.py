@@ -61,6 +61,7 @@ class RandomDevice(Device):
     def owns(self, addr: int32) -> bool: return addr == constants.RANDOM_PORT
     def get(self, addr: int32) -> int32: return int32(numpy.random.randint(-2147483648, 2147483647, dtype=int32))
 
+
 class GPU:
 
     def __init__(self, processor: 'Processor'):
@@ -127,18 +128,13 @@ class ProcessorError(Exception):
 
 class Processor:
 
-    def __init__(self, asserts: Dict[int, Tuple[int, int]] = None, sprites: List[str] = None, exception_handle: Callable[['Processor', ProcessorError], None] = None):
-        if asserts is None:
-            asserts = {}
-        if sprites is None:
-            sprites = []
+    def __init__(self, exception_handle: Callable[['Processor', ProcessorError], None] = None):
         if exception_handle is None:
             exception_handle = uncaught_exception_handler
 
         self.memory: List[int32] = [int32(0)] * constants.MAIN_MEMORY_SIZE  # N x 32b
         self.instructions: List[uint64] = [uint64(0)] * constants.INSTRUCTION_MEMORY_SIZE  # N x 64b
-        self.asserts: Dict[int32, Tuple[int32, int32]] = {int32(k): (int32(v[0]), int32(v[1])) for k, v in asserts.items()}
-        self.sprites: List[ImageBuffer] = [ImageBuffer.unpack(s) for s in sprites]
+        self.sprites: List[ImageBuffer] = [ImageBuffer.empty()] * constants.GPU_MEMORY_SIZE  # N x 32x32b
         self.exception_handle = exception_handle
 
         self.running = False
@@ -150,9 +146,11 @@ class Processor:
         self.devices: List[Device] = [ZeroRegisterDevice(), CounterDevice(), RandomDevice()]
         self.gpu = GPU(self)
 
-    def load(self, instructions: List[int]):
+    def load(self, instructions: List[int], sprites: List[str]):
         for i, inst in enumerate(instructions):
             self.instructions[i] = uint64(inst)
+        for i, sprite in sprites:
+            self.sprites[i] = ImageBuffer.unpack(sprite)
 
     def run(self):
         self.running = True
@@ -187,11 +185,10 @@ class Processor:
     def halt(self):
         self.running = False
 
-    def do_assert(self):
-        addr, expected = self.asserts[self.pc]
-        actual = self.mem_get_operand(addr)
+    def do_assert(self, ir_data: IRData):
+        actual, expected = self.mem_get_operand(ir_data.op3), ir_data.imm26
         if actual != expected:
-            self.exception_handle(self, ProcessorErrorType.ASSERT.create('At assert %s = %d (got %d)' % (dissasembler.decode_address(addr), expected, actual)))
+            self.exception_handle(self, ProcessorErrorType.ASSERT.create('At assert %s = %d (got %d)' % (dissasembler.decode_address(ir_data.op3), expected, actual)))
             self.running = False
 
     def error(self, code: int32):
@@ -420,6 +417,6 @@ INSTRUCTIONS: Tuple[Instruction] = validate(
     SpecialInstruction(Opcodes.CALL, lambda model, ir: model.call(ir.branch)),
     SpecialInstruction(Opcodes.RET, lambda model, _: model.ret()),
     SpecialInstruction(Opcodes.HALT, lambda model, _: model.halt()),
-    SpecialInstruction(Opcodes.ASSERT, lambda model, _: model.do_assert()),
+    SpecialInstruction(Opcodes.ASSERT, lambda model, ir: model.do_assert(ir)),
     SpecialInstruction(Opcodes.GPU, lambda model, ir: model.gpu.exec(ir))
 )

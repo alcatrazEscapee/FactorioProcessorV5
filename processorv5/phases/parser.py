@@ -78,7 +78,6 @@ class ParseToken(IntEnum):
     ADDRESS_INDIRECT = enum.auto()
 
     # Values
-    IMMEDIATE_32 = enum.auto()  # used for non-native asserts
     IMMEDIATE_26 = enum.auto()
     IMMEDIATE_13 = enum.auto()
 
@@ -87,9 +86,6 @@ class ParseToken(IntEnum):
     EOF = enum.auto()
     ASSERT = enum.auto()
     ERROR = enum.auto()
-
-    # Halt error codes
-    HALT_ASSERT_FAILED = enum.auto()
 
 
 class ParseError(Exception):
@@ -316,7 +312,7 @@ class Parser:
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
-    def __init__(self, tokens: List['Scanner.Token'], assert_mode: Literal['native', 'interpreted', 'none'] = 'none', file: str = None):
+    def __init__(self, tokens: List['Scanner.Token'], file: str = None, enable_assertions: bool = False):
         self.input_tokens: List['Scanner.Token'] = tokens
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
@@ -332,7 +328,7 @@ class Parser:
         self.aliases: Dict[str, int] = {}  # 'alias' statements
         self.sprites: List[str] = []  # sprite literals, for GPU ROM
         self.tex_helper: TextureHelper = TextureHelper(self.root, self.err)
-        self.assert_mode: Literal['native', 'interpreted', 'none'] = assert_mode
+        self.enable_assertions = enable_assertions
 
         self.error: Optional[ParseError] = None
 
@@ -501,7 +497,7 @@ class Parser:
                 return self.err('%s\nIn file \'%s\', referenced from \'include "%s"\'' % (scanner.error, file, ref))
 
             # Link sub-parser's output to this parser
-            parser = Parser(scanner.output_tokens, self.assert_mode, file)
+            parser = Parser(scanner.output_tokens, file, self.enable_assertions)
             parser.output_tokens = self.output_tokens
             parser.word_count = self.word_count
             parser.labels = self.labels
@@ -574,20 +570,10 @@ class Parser:
     def parse_assert(self):
         p1 = self.parse_address()
         self.expect(ScanToken.EQUALS, 'Expected \'=\' after \'assert <address>\' statement')
-        value = self.parse_int(Parser.VALUE)
-        if self.assert_mode == 'native':
-            # assert A = #V is transpiled to native code, but this only supports 26-bit immediate values
-            # bne A #V assert_label_1
-            # halt ERROR_ASSERT_FAILED
-            # assert_label_1:
-            raise NotImplementedError
-        elif self.assert_mode == 'interpreted':
-            # assert A == #V is transpiled to a single 'assert' instruction, which is otherwise a noop instruction
-            # This is passed onto the codegen as an 'assert'
-            self.push(ParseToken.ASSERT, *p1, ParseToken.IMMEDIATE_32, value)
-        elif self.assert_mode == 'none':
-            # Asserts are not outputted to the next stage
-            pass
+        value = self.parse_int(Parser.IMMEDIATE_SIGNED)
+        if self.enable_assertions:
+            # Output assert instructions to the next stage
+            self.push(ParseToken.ASSERT, *p1, ParseToken.IMMEDIATE_26, value)
 
     def parse_instruction(self):
         opcode = self.next()

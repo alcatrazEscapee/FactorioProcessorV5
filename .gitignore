@@ -6,6 +6,9 @@
 !/asm/textures/**/*.png
 !/asm/**/*.s
 
+!/blueprints/**/*.blueprint
+/blueprints/generated/**/*.blueprint
+
 !/processorv5/**/*.py
 !/test/**/*.py
 

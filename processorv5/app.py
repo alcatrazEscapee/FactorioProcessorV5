@@ -95,7 +95,8 @@ class App:
 
         with open(path, 'r', encoding='utf-8') as f:
             text = f.read()
-        asm = Assembler(path, text, 'interpreted')
+
+        asm = Assembler(path, text, enable_assertions=True)
         if not asm.assemble():
             error = Toplevel(self.root)
             error.grab_set()
@@ -110,8 +111,8 @@ class App:
     def on_run(self):
         if self.asm is not None:
             self.update_screen(ImageBuffer.empty())
-            proc = Processor(self.asm.asserts, self.asm.sprites, exception_handle=debug_exception_handler)
-            proc.load(self.asm.code)
+            proc = Processor(exception_handle=debug_exception_handler)
+            proc.load(self.asm.code, self.asm.sprites)
             parent, child = Pipe()
 
             self.processor_pipe.reopen(parent)

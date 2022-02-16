@@ -1,6 +1,6 @@
-from typing import List
 from constants import Instructions, Opcodes, GPUInstruction, GPUFunction, GPUImageDecoder
 from numpy import int32, uint64
+from typing import List
 
 import processor
 
@@ -30,7 +30,7 @@ def decode(code: List[int]) -> List[str]:
         elif op == Opcodes.CALL:
             inst += ' ' + decode_offset(fields.branch, i)
         elif op == Opcodes.ASSERT:
-            inst += ' <synthetic>'
+            inst += ' ' + decode_address(fields.op3) + ' = ' + str(fields.imm26)
         elif op == Opcodes.GPU:
             gpu = GPUInstruction(fields.gpu_opcode)
             inst = '%04d | %s' % (i, Instructions[gpu.name].value)

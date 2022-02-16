@@ -255,3 +255,32 @@ class GPUImageDecoder(IntEnum):
     G_4x8 = 3
     G_2x16 = 4
     G_1x32 = 5
+
+
+class ALUCode(IntEnum):
+    ADD = 0
+    SUB = 1
+    MUL = 2
+    DIV = 3
+    POW = 4
+    MOD = 5
+    AND = 6
+    OR = 7
+    XOR = 8
+    LS = 9
+    RS = 10
+    NAND = 11
+    NOR = 12
+    XNOR = 13
+    EQ = 14
+    NE = 15
+    LT = 16
+    GT = 17
+    LE = 18
+    GE = 19
+
+
+class ALUInputCode(IntEnum):
+    A = 0
+    B = 1
+    IMMEDIATE = 2
