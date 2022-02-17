@@ -257,6 +257,18 @@ class GPUImageDecoder(IntEnum):
     G_1x32 = 5
 
 
+class GPUBufferCode(IntEnum):
+    GPU_ROM_OUT = 0
+    IMAGE_DECODER_OUT = 1
+    TRANSLATION_MATRIX_OUT = 2
+    COMPOSER_OUT = 3
+
+
+class GPUInputCode(IntEnum):
+    IMMEDIATE = 0
+    MEMORY = 1
+
+
 class ALUCode(IntEnum):
     ADD = 0
     SUB = 1
@@ -284,3 +296,14 @@ class ALUInputCode(IntEnum):
     A = 0
     B = 1
     IMMEDIATE = 2
+
+
+class PCInputCode(IntEnum):
+    INCREMENT = 0
+    RA = 1
+    OFFSET = 2
+
+class BranchCode(IntEnum):
+    NONE = 0
+    UNCONDITIONAL = 1
+    CONDITIONAL = 2

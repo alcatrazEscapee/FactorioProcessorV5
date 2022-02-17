@@ -239,6 +239,10 @@ class Scanner:
                 if line != '':
                     lines.append(line)
                     line = ''
+            elif c == '|':  # Fake newline, start a new line without incrementing self.line_num
+                if line != '':
+                    lines.append(line)
+                    line = ''
             elif c in Scanner.SPRITE:
                 line += c
             elif c in Scanner.WHITESPACE:
@@ -248,6 +252,8 @@ class Scanner:
             self.pointer += 1
             c = self.next()
 
+        if line:  # Include un-terminated last line
+            lines.append(line)
         if not lines:
             self.err('Empty sprite literal not allowed')
         if any(len(line) != len(lines[0]) for line in lines):

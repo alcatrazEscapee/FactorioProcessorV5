@@ -1,6 +1,6 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
-from typing import List, Tuple, Dict, Callable, NamedTuple
+from typing import List, Tuple, Callable, NamedTuple, Optional
 from enum import Enum
 from constants import Opcodes, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from utils import ImageBuffer
@@ -109,8 +109,9 @@ class GPU:
 
 class ProcessorErrorType(Enum):
     ASSERT = 'Assertion Failed'
-    MEMORY_READ = 'Memory Read Error'
-    MEMORY_WRITE = 'Memory Write Error'
+    INVALID_MEMORY_ADDRESS = 'Memory Read Error (Unhandled Address)'
+    UNINITIALIZED_MEMORY_READ = 'Memory Read Error (Uninitialized)'
+    MEMORY_WRITE = 'Memory Write Error (Unhandled Address)'
     GPU_MEMORY_READ = 'GPU Memory Read Error'
 
     def create(self, message: str):
@@ -132,7 +133,8 @@ class Processor:
         if exception_handle is None:
             exception_handle = uncaught_exception_handler
 
-        self.memory: List[int32] = [int32(0)] * constants.MAIN_MEMORY_SIZE  # N x 32b
+        self.memory: List[Optional[int32]] = [None] * constants.MAIN_MEMORY_SIZE  # N x 32b
+        self.memory[0] = int32(0)  # R0
         self.instructions: List[uint64] = [uint64(0)] * constants.INSTRUCTION_MEMORY_SIZE  # N x 64b
         self.sprites: List[ImageBuffer] = [ImageBuffer.empty()] * constants.GPU_MEMORY_SIZE  # N x 32x32b
         self.exception_handle = exception_handle
@@ -143,13 +145,17 @@ class Processor:
         self.error_code = int32(0)
 
         # Peripheral Devices
-        self.devices: List[Device] = [ZeroRegisterDevice(), CounterDevice(), RandomDevice()]
+        self.r0 = ZeroRegisterDevice()
+        self.counter = CounterDevice()
+        self.rng = RandomDevice()
+        self.devices: List[Device] = [self.r0, self.counter, self.rng]
+
         self.gpu = GPU(self)
 
     def load(self, instructions: List[int], sprites: List[str]):
         for i, inst in enumerate(instructions):
             self.instructions[i] = uint64(inst)
-        for i, sprite in sprites:
+        for i, sprite in enumerate(sprites):
             self.sprites[i] = ImageBuffer.unpack(sprite)
 
     def run(self):
@@ -213,11 +219,14 @@ class Processor:
         Requires one 'read' channel
         """
         if 1 <= addr < constants.MAIN_MEMORY_SIZE:
-            return self.memory[addr]
+            value = self.memory[addr]
+            if value is None:
+                return self.exception_handle(self, ProcessorErrorType.UNINITIALIZED_MEMORY_READ.create('At address: %d' % addr))
+            return value
         for device in self.devices:
             if device.owns(addr):
                 return device.get(addr)
-        self.exception_handle(self, ProcessorErrorType.MEMORY_READ.create('Tried to read invalid memory address: %d' % addr))
+        self.exception_handle(self, ProcessorErrorType.INVALID_MEMORY_ADDRESS.create('At address: %d' % addr))
 
     def mem_set_operand(self, operand: int32, value: int32):
         """

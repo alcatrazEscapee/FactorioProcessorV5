@@ -1,4 +1,9 @@
 start:
+    seti r1 0
+    seti r2 0
+    seti r3 0
+    seti r4 0
+
     seti r0 53  # Regression: this instruction should not increment the code point
     call foo
 

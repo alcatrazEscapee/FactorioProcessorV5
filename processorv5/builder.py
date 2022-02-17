@@ -1,5 +1,6 @@
 from typing import List, Dict, Tuple, Any, Union, Callable
-from constants import Opcodes, ALUCode, ALUInputCode
+from constants import Opcodes, GPUInstruction, GPUBufferCode, GPUInputCode, ALUCode, ALUInputCode, PCInputCode, BranchCode
+from numpy import int32
 from utils import ImageBuffer
 from enum import IntEnum
 
@@ -15,8 +16,8 @@ SIGNALS_32BIT = ['wooden-chest', 'iron-chest', 'steel-chest', 'storage-tank', 't
 TWO_OPERAND = {'W': 1, 'X': ALUInputCode.A, 'Y': ALUInputCode.B}
 OPERAND_IMMEDIATE = {'W': 1, 'X': ALUInputCode.B, 'Y': ALUInputCode.IMMEDIATE}
 OPERAND_IMMEDIATE_REVERSE = {'W': 1, 'X': ALUInputCode.IMMEDIATE, 'Y': ALUInputCode.B}
-TWO_OPERAND_OFFSET = {'X': ALUInputCode.A, 'Y': ALUInputCode.B}
-OPERAND_IMMEDIATE_OFFSET = {'X': ALUInputCode.B, 'Y': ALUInputCode.IMMEDIATE}
+TWO_OPERAND_OFFSET = {'X': ALUInputCode.A, 'Y': ALUInputCode.B, 'S': PCInputCode.OFFSET, 'J': BranchCode.CONDITIONAL}
+OPERAND_IMMEDIATE_OFFSET = {'X': ALUInputCode.B, 'Y': ALUInputCode.IMMEDIATE, 'S': PCInputCode.OFFSET, 'J': BranchCode.CONDITIONAL}
 
 INSTRUCTIONS: Dict[Opcodes, Dict[str, IntLike]] = {
     Opcodes.ADD: {**TWO_OPERAND, 'L': ALUCode.ADD},
@@ -72,11 +73,22 @@ INSTRUCTIONS: Dict[Opcodes, Dict[str, IntLike]] = {
     Opcodes.BLTI: {**OPERAND_IMMEDIATE_OFFSET, 'L': ALUCode.LT},
     Opcodes.BGTI: {**OPERAND_IMMEDIATE_OFFSET, 'L': ALUCode.GT},
     # Special (Type E)
-    Opcodes.CALL: {},
-    Opcodes.RET: {},
+    Opcodes.CALL: {'S': PCInputCode.OFFSET, 'J': BranchCode.UNCONDITIONAL, 'R': 1, 'W': 1},
+    Opcodes.RET: {'S': PCInputCode.RA, 'A': 0b1111111110_0_00000},
     Opcodes.HALT: {'H': 1},
     Opcodes.ASSERT: {'T': 1},
     Opcodes.GPU: {'G': 1}
+}
+
+GPU_INSTRUCTIONS: Dict[GPUInstruction, Dict[str, IntLike]] = {
+    GPUInstruction.GFLUSH: {'S': 1},
+    GPUInstruction.GLSI: {'I': 1, 'J': GPUBufferCode.GPU_ROM_OUT, 'X': GPUInputCode.IMMEDIATE},
+    GPUInstruction.GLS: {'I': 1, 'J': GPUBufferCode.GPU_ROM_OUT, 'X': GPUInputCode.MEMORY},
+    GPUInstruction.GLSD: {'I': 1, 'J': GPUBufferCode.IMAGE_DECODER_OUT, 'X': GPUInputCode.MEMORY},
+    GPUInstruction.GCB: {'U': 1},
+    GPUInstruction.GCI: {'I': 1, 'J': GPUBufferCode.COMPOSER_OUT},
+    GPUInstruction.GMV: {'I': 1, 'J': GPUBufferCode.TRANSLATION_MATRIX_OUT, 'X': GPUInputCode.MEMORY, 'Y': GPUInputCode.MEMORY},
+    GPUInstruction.GMVI: {'I': 1, 'J': GPUBufferCode.TRANSLATION_MATRIX_OUT, 'X': GPUInputCode.IMMEDIATE, 'Y': GPUInputCode.IMMEDIATE},
 }
 
 
@@ -84,6 +96,8 @@ def main():
     # build_signals_32bit()
     # build_gpu_image_decoder()
     build_control_unit()
+    # build_gpu_control_unit()
+    # build_gpu_screen_encoder()
     print('Done')
 
 
@@ -111,6 +125,7 @@ def build_rom(code: List[int], sprites: List[str]) -> str:
             signal = signal[row_index_y]
             signal['count'] = int(value)
 
+    min_x, min_y = min(x for x, _ in gpu_rom_index.keys()), min(y for _, y in gpu_rom_index.keys())
     for address, sprite in enumerate(sprites):
         index = address
         index, col_x = index // 16, index % 16
@@ -120,13 +135,13 @@ def build_rom(code: List[int], sprites: List[str]) -> str:
 
         buffer = ImageBuffer.unpack(sprite)
         for y in range(32):
-            value = 0
+            value = int32(0)
             for x in range(32):
-                value |= (1 if buffer[x, y] == '#' else 0) << x
+                value |= (int32(1) if buffer[x, y] == '#' else int32(0)) << int32(x)
 
-            signal = gpu_rom_index[col_x, row_y + (y > 15)]
-            signal = signal[y]
-            signal['count'] = value
+            signal = gpu_rom_index[min_x + col_x, min_y + row_y + (y >= 20)]
+            signal = signal[y % 20]
+            signal['count'] = int(value)
 
     return blueprint.encode_blueprint_string(obj)
 
@@ -163,9 +178,37 @@ def build_control_unit():
 
     encode('control_unit', obj)
 
+def build_gpu_control_unit():
+    obj = decode('prototype_gpu_control_unit')
+    index = partition(obj)
+
+    for col in range(8):
+        opcode = GPUInstruction(col)
+        cc = index[col, 0]
+        dc = index[col, 1]
+
+        assert cc['name'] == 'constant-combinator'
+        assert dc['name'] == 'decider-combinator'
+
+        if 'control_behavior' not in cc:
+            cc['control_behavior'] = {}
+
+        cc_control = cc['control_behavior']
+        cc_control['filters'] = [
+            constant_signal(c, 0, 1 + i) for i, c in enumerate(opcode.name.ljust(4))
+        ] + [
+            constant_signal(signal, value, 11 + i) for i, (signal, value) in enumerate(GPU_INSTRUCTIONS[opcode].items())
+        ]
+
+        dc_control = dc['control_behavior']['decider_conditions']
+        dc_control['first_signal']['name'] = 'signal-G'
+        dc_control['constant'] = opcode
+
+    encode('gpu_control_unit', obj)
+
 
 def build_gpu_image_decoder():
-    obj = decode('prototype_gpu_image_decoder', True)
+    obj = decode('prototype_gpu_image_decoder')
     index = partition(obj)
 
     for y in range(6):
@@ -177,6 +220,16 @@ def build_gpu_image_decoder():
             control['output_signal']['name'] = SIGNALS_32BIT[x]
 
     encode('gpu_image_decoder', obj)
+
+
+def build_gpu_screen_encoder():
+    obj = decode('prototype_gpu_screen_encoder')
+    index = partition(obj)
+
+    for x in range(31):
+        e = index[x, 0]
+        control = e['control_behavior']['arithmetic_conditions']
+        assert control['second_constant'] == int32(1) << int32(x)
 
 
 def build_signals_32bit():

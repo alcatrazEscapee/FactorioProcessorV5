@@ -1,4 +1,10 @@
 start:
+    # Init
+    seti r1 0
+    seti r2 0
+    seti r3 0
+    seti r4 0
+
     call foo
 
     assert r1 = 0

@@ -28,7 +28,7 @@ def decode(code: List[int]) -> List[str]:
         elif op == Opcodes.HALT or op == Opcodes.RET:
             pass
         elif op == Opcodes.CALL:
-            inst += ' ' + decode_offset(fields.branch, i)
+            inst += ' ' + decode_offset(i, fields.branch)
         elif op == Opcodes.ASSERT:
             inst += ' ' + decode_address(fields.op3) + ' = ' + str(fields.imm26)
         elif op == Opcodes.GPU:

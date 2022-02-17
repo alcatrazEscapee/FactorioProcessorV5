@@ -1,4 +1,12 @@
 start:
+    # Init
+    seti r1 0
+    seti r2 0
+    seti r3 0
+    seti r4 0
+    seti r5 0
+    seti r6 0
+
     br end
     seti r1 1
     seti r2 2

@@ -228,12 +228,11 @@ class AutoClosingPipe:
                 self.pipe = None
 
     def poll(self):
-        if self.pipe is not None:
-            try:
-                while self.pipe.poll():
-                    yield self.pipe.recv()
-            except BrokenPipeError:
-                self.pipe = None
+        try:
+            while self.pipe is not None and self.pipe.poll():
+                yield self.pipe.recv()
+        except BrokenPipeError:
+            self.pipe = None
 
 
 class ManagedGPU(GPU):
