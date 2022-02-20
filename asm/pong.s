@@ -27,6 +27,7 @@ word playerScore, computerScore
 # Memory locations used for peripheral IO
 # Cannot use the literal value in instructions, so these have to be preloaded
 word COUNTER, CONTROL_UP, CONTROL_DOWN
+word RNG
 
 sprite SPRITE_PADDLE `
 #.....
@@ -47,16 +48,28 @@ main:
     seti @COUNTER 2000
     seti @CONTROL_UP 3000
     seti @CONTROL_DOWN 3001
+    seti @RNG 4000
 
+    seti @playerScore 0
+    seti @computerScore 0
+
+main_restart:
     # Initialization
     seti @ballX 15
     seti @ballY 15
-    seti @ballVX 1
-    seti @ballVY 1
     seti @playerX 1
     seti @playerY 12
     seti @computerX 30
     seti @computerY 12
+    addi @nextTick @@COUNTER TICK_DELTA  # First tick
+
+    # Random X/Y Velocity Signs
+    # 1 - (RNG & 0b10) gives 1 or -1 in *minimal instructions*
+    andi r1 @@RNG 0b10
+    subi @ballVX 1 r1
+
+    andi r1 @@RNG 0b10
+    subi @ballVY 1 r1
 
 main_loop:
 
@@ -122,12 +135,12 @@ main_check_win:
     bnei @ballX 0 main_check_win_1
     addi @computerScore @computerScore 1
     bgei @computerScore WINNING_SCORE main_display_loss
-    br main
+    br main_restart
 main_check_win_1:
     bnei @ballX 30 main_graphics
     addi @playerScore @playerScore 1
     bgei @playerScore WINNING_SCORE main_display_win
-    br main
+    br main_restart
 
 main_graphics:
     gcb G_CLEAR  # Clear screen
@@ -159,10 +172,10 @@ main_wait:
 main_display_loss:
     gcb G_CLEAR
     glsi SPRITE_TEXT_YOU
-    gmvi 5 8
+    gmvi 5 4
     gcb G_DRAW_ALPHA
     glsi SPRITE_TEXT_LOSE
-    gmvi 5 14
+    gmvi 5 18
     gcb G_DRAW_ALPHA
     gflush
     halt
@@ -170,10 +183,10 @@ main_display_loss:
 main_display_win:
     gcb G_CLEAR
     glsi SPRITE_TEXT_YOU
-    gmvi 5 8
+    gmvi 5 4
     gcb G_DRAW_ALPHA
     glsi SPRITE_TEXT_WIN
-    gmvi 5 14
+    gmvi 5 18
     gcb G_DRAW_ALPHA
     gflush
     halt

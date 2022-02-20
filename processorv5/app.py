@@ -1,11 +1,11 @@
-from typing import Optional, Callable
+from typing import Optional
 from tkinter import Tk, Frame, Button, Label, Canvas, Toplevel, StringVar, simpledialog, filedialog
 from multiprocessing import Process, Pipe
 from multiprocessing.connection import Connection
 from numpy import int32
 
 from assembler import Assembler
-from processor import Processor, GPU, Device, ImageBuffer
+from processor import Processor, ProcessorError, GPU, Device, ImageBuffer
 
 import os
 import time
@@ -111,7 +111,7 @@ class App:
     def on_run(self):
         if self.asm is not None:
             self.update_screen(ImageBuffer.empty())
-            proc = Processor(exception_handle=debug_exception_handler)
+            proc = Processor()
             proc.load(self.asm.code, self.asm.sprites)
             parent, child = Pipe()
 
@@ -176,15 +176,22 @@ def debug_exception_handler(proc, e):
 
 def manage_processor(proc: Processor, period_ns: int, raw: Connection):
     pipe = AutoClosingPipe(raw)
-    proc.gpu = ManagedGPU(proc, pipe)
-    keyboard = ControlDevice()
+    proc.gpu = AppGPU(proc, pipe)
+    keyboard = AppControlDevice()
     proc.devices.append(keyboard)
     last_ns = tick_ns = time.perf_counter_ns()
     next_ns = last_ns + 1_000_000_000  # report actual frequency every 1s
     ticks = 0
     proc.running = True
     while proc.running:
-        proc.tick()
+        try:
+            proc.tick()
+        except ProcessorError as e:
+            print(e)
+            print(processor.debug_view(proc))
+            pipe.send('halt')
+            return
+
         ticks += 1
         tick_ns += period_ns
 
@@ -235,7 +242,7 @@ class AutoClosingPipe:
             self.pipe = None
 
 
-class ManagedGPU(GPU):
+class AppGPU(GPU):
 
     def __init__(self, proc: Processor, pipe: AutoClosingPipe):
         super().__init__(proc)
@@ -245,7 +252,7 @@ class ManagedGPU(GPU):
         self.pipe.send('screen', self.screen)
 
 
-class ControlDevice(Device):
+class AppControlDevice(Device):
 
     def __init__(self):
         self.data = [int32(0)] * 2

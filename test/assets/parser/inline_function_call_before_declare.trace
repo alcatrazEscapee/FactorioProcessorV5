@@ -1,0 +1,18 @@
+-- Label Dump --
+main - 0
+TYPE_B
+ADDI
+ADDRESS_CONSTANT 1
+ADDRESS_CONSTANT 0
+IMMEDIATE_26 0
+TYPE_E
+CALL
+LABEL 'increment_r1'
+TYPE_E
+CALL
+LABEL 'increment_r1'
+TYPE_E
+HALT
+ERROR Label declared with 'inline' must be declared before prior usage on line 7:
+inline increment_r1:
+-------------------^

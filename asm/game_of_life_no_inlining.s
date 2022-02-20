@@ -1,6 +1,3 @@
-# Stats compared to game_of_life_no_inlining.s
-# Total Instructions: 85 -> 99 (+16%, Overall 1.29% Utilization)
-# Average Instructions Executed / Loop: 69,024 -> 52,764 (+23% Speedup)
 
 alias WIDTH 32
 alias SIZE 1024
@@ -49,42 +46,36 @@ y_loop:
     addi r1 r3 -1  # x param
     addi r2 r4 -1  # y param
     seti r5 0  # count
-
-inline count_at_no_add:
-    # r1 = x, r2 = y
-    # Checking a bit: bit = (number >> n) & 1U;
-    addi r10 r2 state
-    rs rv @r10 r1
-    andi rv rv 1
-    ret
-
-inline count_at:
-    call count_at_no_add
-    add r5 r5 rv
-    ret
-
     call count_at  # X.. / ... / ...
+    add r5 r5 rv
     addi r1 r1 1
     call count_at  # .X. / ... / ...
+    add r5 r5 rv
     addi r1 r1 1
     call count_at  # ..X / ... / ...
+    add r5 r5 rv
     addi r2 r2 1
     call count_at  # ... / ..X / ...
+    add r5 r5 rv
     addi r2 r2 1
     call count_at  # ... / ... / ..X
+    add r5 r5 rv
     addi r1 r1 -1
     call count_at  # ... / ... / .X.
+    add r5 r5 rv
     addi r1 r1 -1
     call count_at  # ... / ... / X..
+    add r5 r5 rv
     addi r2 r2 -1
     call count_at  # ... / X.. / ...
+    add r5 r5 rv
 
     # check if this cell lives or dies
     # live cell with 2 or 3 -> live cell
     # dead cell with 3 -> live cell
     # any other -> dead cell
     addi r1 r1 1  # move to center
-    call count_at_no_add  # ... / .X. / ...
+    call count_at  # ... / .X. / ...
 
     beqi r5 3 cell_lives
     eqi r10 r5 2
@@ -121,6 +112,14 @@ copy_loop:
 
     br main_loop
     halt
+
+count_at:
+    # r1 = x, r2 = y
+    # Checking a bit: bit = (number >> n) & 1U;
+    addi r10 r2 state
+    rs r11 @r10 r1
+    andi rv r11 1
+    ret
 
 set_next_live:
     # r1 = x, r2 = y

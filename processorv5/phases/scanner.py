@@ -8,18 +8,24 @@ import utils
 
 
 class ScanToken(IntEnum):
-    IDENTIFIER = enum.auto()
+    # Special identifiers, keywords
     INSTRUCTION = enum.auto()
     REGISTER = enum.auto()
     ALIAS = enum.auto()
     ASSERT = enum.auto()
-    INTEGER = enum.auto()
     WORD = enum.auto()
     SPRITE = enum.auto()
     INCLUDE = enum.auto()
     TEXTURE = enum.auto()
+    INLINE = enum.auto()
+
+    # Literals
     SPRITE_LITERAL = enum.auto()
     STRING = enum.auto()
+    IDENTIFIER = enum.auto()
+    INTEGER = enum.auto()
+
+    # Syntax
     AT = enum.auto()
     DOT = enum.auto()
     COLON = enum.auto()
@@ -28,6 +34,8 @@ class ScanToken(IntEnum):
     LBRACKET = enum.auto()
     RBRACKET = enum.auto()
     COMMA = enum.auto()
+
+    # Misc
     EOF = enum.auto()
     ERROR = enum.auto()
 
@@ -64,7 +72,8 @@ class Scanner:
         'word': ScanToken.WORD,
         'sprite': ScanToken.SPRITE,
         'include': ScanToken.INCLUDE,
-        'texture': ScanToken.TEXTURE
+        'texture': ScanToken.TEXTURE,
+        'inline': ScanToken.INLINE
     }
     SYNTAX = {
         '@': ScanToken.AT,

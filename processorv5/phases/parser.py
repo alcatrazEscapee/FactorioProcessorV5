@@ -122,15 +122,20 @@ class ParserInstruction:
 
 class CustomInstruction(ParserInstruction):
 
-    def __init__(self, tokens: Callable[['Parser'], Tuple['Parser.Token', ...]], feed: Callable[[Tuple['Parser.Token', ...]], Tuple['Parser.Token', ...]] = None):
+    def __init__(self, tokens: Callable[['Parser'], Tuple['Parser.Token', ...]]):
         self.tokens = tokens
-        self.feed = feed
 
     def parse(self, parser: 'Parser'):
-        tokens = self.tokens(parser)
-        if self.feed is not None:
-            tokens = self.feed(tokens)
-        parser.push(*tokens)
+        parser.push(*self.tokens(parser))
+
+class CallInstruction(ParserInstruction):
+
+    def parse(self, parser: 'Parser'):
+        label, inline = parser.parse_label_reference(True)
+        if inline is None:
+            parser.push(ParseToken.TYPE_E, ParseToken.CALL, ParseToken.LABEL, label)
+        else:
+            inline.feed(parser)
 
 class TypeAInstruction(ParserInstruction):
     """ Three operand instruction """
@@ -275,7 +280,7 @@ class Parser:
         Instructions.BGEI: TypeDRInstruction(ParseToken.BGTI, ParseToken.BLTI, lambda p, rev, imm: p.check_interval(imm + 1 if rev else imm - 1, Parser.IMMEDIATE_SIGNED)),
 
         # Special
-        Instructions.CALL: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.CALL, ParseToken.LABEL, p.parse_label_reference())),
+        Instructions.CALL: CallInstruction(),
         Instructions.RET: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.RET)),
         Instructions.HALT: CustomInstruction(lambda p: (ParseToken.TYPE_E, ParseToken.HALT)),
 
@@ -329,6 +334,7 @@ class Parser:
         self.sprites: List[str] = []  # sprite literals, for GPU ROM
         self.tex_helper: TextureHelper = TextureHelper(self.root, self.err)
         self.enable_assertions = enable_assertions
+        self.inline_functions: Dict[str, 'InlineFunctionParser'] = {}  # Sub-parsers for inline functions. They consume the tokens declared in the inline procedure, and re-emit them for each usage
 
         self.error: Optional[ParseError] = None
 
@@ -366,35 +372,8 @@ class Parser:
     def parse(self) -> bool:
         try:
             while not self.eof():
-                t = self.next()
-                if t == ScanToken.IDENTIFIER:
-                    self.pointer += 1
-                    self.parse_label()
-                elif t == ScanToken.INSTRUCTION:
-                    self.pointer += 1
-                    self.parse_instruction()
-                elif t == ScanToken.ALIAS:
-                    self.pointer += 1
-                    self.parse_alias()
-                elif t == ScanToken.WORD:
-                    self.pointer += 1
-                    self.parse_word()
-                elif t == ScanToken.SPRITE:
-                    self.pointer += 1
-                    self.parse_sprite()
-                elif t == ScanToken.TEXTURE:
-                    self.pointer += 1
-                    self.parse_texture()
-                elif t == ScanToken.INCLUDE:
-                    self.pointer += 1
-                    self.parse_include()
-                elif t == ScanToken.ASSERT:
-                    self.pointer += 1
-                    self.parse_assert()
-                elif t == ScanToken.EOF:
+                if self.parse_any():
                     break
-                else:
-                    self.err('Unknown token: \'%s\'' % str(t))
 
             # Check that all labels have been defined
             for label, err in self.undefined_labels.items():
@@ -408,22 +387,84 @@ class Parser:
             self.error = e
             return False
 
+    def parse_any(self) -> bool:
+        t = self.next()
+        if t == ScanToken.IDENTIFIER:
+            self.pointer += 1
+            self.parse_label()
+        elif t == ScanToken.INLINE:
+            self.pointer += 1
+            self.parse_inline_label()
+        elif t == ScanToken.INSTRUCTION:
+            self.pointer += 1
+            self.parse_instruction()
+        elif t == ScanToken.ALIAS:
+            self.pointer += 1
+            self.parse_alias()
+        elif t == ScanToken.WORD:
+            self.pointer += 1
+            self.parse_word()
+        elif t == ScanToken.SPRITE:
+            self.pointer += 1
+            self.parse_sprite()
+        elif t == ScanToken.TEXTURE:
+            self.pointer += 1
+            self.parse_texture()
+        elif t == ScanToken.INCLUDE:
+            self.pointer += 1
+            self.parse_include()
+        elif t == ScanToken.ASSERT:
+            self.pointer += 1
+            self.parse_assert()
+        elif t == ScanToken.EOF:
+            return True
+        else:
+            self.err('Unknown token: \'%s\'' % str(t))
+        return False
+
+    def parse_inline_label(self):
+        self.expect(ScanToken.IDENTIFIER, 'Expected a label following \'inline\' keyword')
+        label = self.next()
+        if label in self.labels:
+            self.err('Duplicate label defined: \'%s\'' % label)
+        self.pointer += 1
+        self.expect(ScanToken.COLON, 'Unknown keyword, or label missing a \':\'' + self.hint(label, Instructions.names()), offset=-1)
+        if label in self.undefined_labels:
+            self.err('Label declared with \'inline\' must be declared before prior usage', offset=-1)
+
+        inline = InlineFunctionParser(self)
+        inline.pointer = self.pointer
+        inline.parse()
+        self.pointer = inline.pointer
+        self.inline_functions[label] = inline
+
     def parse_label(self):
         label = self.next()
         if label in self.labels:
-            self.err('Duplicate label defined: ' + repr(label))
+            self.err('Duplicate label defined: \'%s\'' % label)
         self.pointer += 1
         self.expect(ScanToken.COLON, 'Unknown keyword, or label missing a \':\'' + self.hint(label, Instructions.names()), offset=-1)
         if label in self.undefined_labels:
             del self.undefined_labels[label]
         self.labels[label] = self.code_point
 
-    def parse_label_reference(self) -> str:
+    def parse_label_reference(self, allow_inline_labels: bool = False) -> Union[str, Tuple[str, Optional['InlineFunctionParser']]]:
         self.expect(ScanToken.IDENTIFIER, 'Expected a label reference')
         label = self.next()
+
+        if label in self.inline_functions:
+            if allow_inline_labels:
+                self.pointer += 1
+                return label, self.inline_functions[label]
+            else:
+                self.err('Cannot reference a \'inline\' label. Inline functions must only be used with \'call\' instructions')
+
         if label not in self.labels and label not in self.undefined_labels:
             self.undefined_labels[label] = self.make_err('Label used but not defined: \'%s\'%s' % (label, self.hint(label, self.labels.keys())))
         self.pointer += 1
+
+        if allow_inline_labels:
+            return label, None
         return label
 
     def parse_alias(self):
@@ -504,6 +545,7 @@ class Parser:
             parser.aliases = self.aliases
             parser.sprites = self.sprites
             parser.includes = self.includes
+            parser.inline_functions = self.inline_functions
             if not parser.parse():
                 parser.output_tokens.pop()  # Remove the last error token, to avoid duplicating it
                 parser.output_tokens.pop()
@@ -722,8 +764,7 @@ class Parser:
         if t != expected_token:
             if reason is None:
                 reason = 'Expected %s' % expected_token.name
-            self.pointer += offset
-            self.err(reason)
+            self.err(reason, offset)
         self.pointer += 1
 
     def push(self, *tokens: 'Parser.Token'):
@@ -740,9 +781,74 @@ class Parser:
                 return ' (Did you mean \'%s\'?)' % value
         return ''
 
-    def err(self, reason: str):
+    def err(self, reason: str, offset: int = 0):
+        self.pointer += offset
         raise self.make_err(reason)
 
     def make_err(self, reason: str) -> ParseError:
         safe_pointer = self.pointer - 1 if self.eof() else self.pointer
         return ParseError(reason, safe_pointer, self.input_tokens[safe_pointer])
+
+
+class InlineFunctionParserExit(Exception):
+    pass
+
+
+class InlineFunctionParser(Parser):
+
+    def __init__(self, parent: Parser):
+        super().__init__(parent.input_tokens, parent.file, parent.enable_assertions)
+        self.includes = parent.includes
+        self.word_count = parent.word_count
+        self.aliases = parent.aliases
+        self.sprites = parent.sprites
+        self.inline_functions = parent.inline_functions
+
+        self.origin = parent.code_point
+        self.invocation_count = 0
+
+    def feed(self, parent: Parser):
+        # Output the contents of the inline function
+        # Edit all labels to be suffixed with the invocation index of this inline function
+        # Output all labels, adjusted for the new output location's code point
+        parent_origin = parent.code_point
+        label = False
+        for token in self.output_tokens:
+            if token == ParseToken.LABEL:
+                label = True
+                parent.push(token)
+            elif label:
+                label = False
+                parent.push(token + '[%d]' % self.invocation_count)
+            else:
+                parent.push(token)
+
+        for label, code_point in self.labels.items():
+            parent.labels[label + '[%d]' % self.invocation_count] = parent_origin - self.origin + code_point
+
+        self.invocation_count += 1
+
+    def parse(self):
+        while not self.eof():
+            try:
+                if self.parse_any():
+                    self.err('Encountered end of file before inline function was terminated!')
+            except InlineFunctionParserExit:
+                break
+
+        # Check that all labels local to the inline block have been defined
+        for label, err in self.undefined_labels.items():
+            raise err
+
+    def parse_inline_label(self):
+        self.err('Illegal reference to recursive inline function - inline functions must be terminated with a \'ret\' instruction before another \'inline\' keyword.')
+
+    def parse_instruction(self):
+        opcode = self.next()
+        if opcode == Instructions.RET.value:
+            # Terminate the inline function parser - throw a dummy exception which gets caught at the top level parse function
+            # Consume the 'ret', but do not output it
+            self.pointer += 1
+            raise InlineFunctionParserExit
+        else:
+            super().parse_instruction()

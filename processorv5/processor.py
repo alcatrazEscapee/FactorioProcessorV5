@@ -1,6 +1,6 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
-from typing import List, Tuple, Callable, NamedTuple, Optional
+from typing import List, Tuple, Callable, NamedTuple, Optional, Any
 from enum import Enum
 from constants import Opcodes, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from utils import ImageBuffer
@@ -129,7 +129,7 @@ class ProcessorError(Exception):
 
 class Processor:
 
-    def __init__(self, exception_handle: Callable[['Processor', ProcessorError], None] = None):
+    def __init__(self, exception_handle: Callable[['Processor', ProcessorError], Any] = None):
         if exception_handle is None:
             exception_handle = uncaught_exception_handler
 
@@ -170,6 +170,8 @@ class Processor:
         # Processor Tick
         ir = self.inst_get()
         ir_data: IRData = decode_ir(ir)
+        if ir_data.opcode == Opcodes.GPU.value and ir_data.gpu_opcode == GPUInstruction.GFLUSH.value:
+            print(self.pc, self.counter.tick_count, ir_data)
         self.pc_next = self.pc + int32(1)
         inst = INSTRUCTIONS[ir_data.opcode]
         inst.exec(self, ir_data)  # writes to memory
@@ -226,7 +228,7 @@ class Processor:
         for device in self.devices:
             if device.owns(addr):
                 return device.get(addr)
-        self.exception_handle(self, ProcessorErrorType.INVALID_MEMORY_ADDRESS.create('At address: %d' % addr))
+        return self.exception_handle(self, ProcessorErrorType.INVALID_MEMORY_ADDRESS.create('At address: %d' % addr))
 
     def mem_set_operand(self, operand: int32, value: int32):
         """
@@ -286,7 +288,7 @@ def debug_view(proc: Processor):
     # Show an area around the non-zero memory
     memory_view = set()
     for i, m in enumerate(proc.memory):
-        if m != 0:
+        if m != 0 and m is not None:
             memory_view |= {i - 1, i, i + 1}
 
     # Show a view of the assembly near the area
@@ -301,7 +303,7 @@ def debug_view(proc: Processor):
         '',
         'Memory:',
         'Addr | Hex  | Dec',
-        *['%04d | %s | %d' % (i, format(m, '04x'), m) for i, m in enumerate(proc.memory) if i in memory_view]
+        *['%04d | %s | %s' % (i, format(int(m), '08x') if m is not None else '????', '%d' % m if m is not None else '?') for i, m in enumerate(proc.memory) if i in memory_view]
     ])
 
 def uncaught_exception_handler(proc: Processor, e: ProcessorError):
