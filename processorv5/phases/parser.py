@@ -289,6 +289,7 @@ class Parser:
         Instructions.SET: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.ADD, *p.parse_address(), *p.parse_address(), *Parser.R0)),
         Instructions.SETI: CustomInstruction(lambda p: (ParseToken.TYPE_B, ParseToken.ADDI, *p.parse_address(), *Parser.R0, ParseToken.IMMEDIATE_26, p.parse_immediate26())),
         Instructions.BR: CustomInstruction(lambda p: (ParseToken.TYPE_C, ParseToken.BEQ, *Parser.R0, *Parser.R0, ParseToken.LABEL, p.parse_label_reference())),
+        Instructions.NOT: CustomInstruction(lambda p: (ParseToken.TYPE_A, ParseToken.NOR, *p.parse_address(), *p.parse_address(), *Parser.R0)),
 
         # GPU
         Instructions.GFLUSH: CustomInstruction(lambda p: (ParseToken.TYPE_F, GPUInstruction.GFLUSH)),

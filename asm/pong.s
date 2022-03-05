@@ -1,6 +1,8 @@
 # Pong
 
+include "./stdio.s"
 include "./7seg_numbers.s"
+
 texture TEXTURE_PONG "./textures/pong.png"
 
 sprite SPRITE_TEXT_YOU TEXTURE_PONG [ 0 0 22 7 ]
@@ -45,10 +47,10 @@ sprite SPRITE_BALL `
 
 main:
     # First-Time
-    seti @COUNTER 2000
-    seti @CONTROL_UP 3000
-    seti @CONTROL_DOWN 3001
-    seti @RNG 4000
+    seti @CONTROL_UP PORT_CONTROL_UP
+    seti @CONTROL_DOWN PORT_CONTROL_DOWN
+    seti @COUNTER PORT_COUNTER
+    seti @RNG PORT_RANDOM
 
     seti @playerScore 0
     seti @computerScore 0

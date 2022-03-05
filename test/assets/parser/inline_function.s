@@ -1,5 +1,5 @@
 inline increment_r1:
-    addi rX rY rZ
+    addi r1 r1 1
     ret
 
 main:

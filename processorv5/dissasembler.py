@@ -8,6 +8,10 @@ import processor
 def decode(code: List[int]) -> List[str]:
     decoded = []
     for i, c in enumerate(code):
+        if c is None:
+            decoded.append('---')
+            continue
+
         fields = processor.decode_ir(uint64(c))
         op = Opcodes(fields.opcode)
         op_name = op.name.lower()

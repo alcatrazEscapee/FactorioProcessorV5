@@ -3,7 +3,6 @@ from processor import Processor
 
 import utils
 import pytest
-import processor
 
 
 def test_branch_backwards(): run('branch_backwards')
@@ -28,8 +27,5 @@ def run(file: str):
 
     assert asm.assemble(), asm.error
 
-    proc = Processor(exception_handle=lambda p, e: pytest.fail(str(e) + '\n\n' + processor.debug_view(p), False))
-    proc.load(asm.code, asm.sprites)
+    proc = Processor(asm.code, asm.sprites, exception_handle=lambda p, e: pytest.fail(str(e) + '\n\n' + p.debug_view(), False))
     proc.run()
-
-    assert proc.error_code == 0

@@ -1,4 +1,5 @@
-from typing import NamedTuple, Union, Dict, List, Tuple, Callable
+from typing import NamedTuple, Union, Dict, List, Tuple, Callable, Optional, Generator, Any
+from multiprocessing.connection import Connection
 from numpy import int32, uint64
 from constants import GPUImageDecoder
 from PIL import Image
@@ -170,3 +171,32 @@ class ImageBuffer:
         if 0 <= y < len(self.data) and 0 <= x < len(row := self.data[y]):
             return row[x]
         return '.'
+
+
+class ConnectionManager:
+    """
+    Helper for the base pipe connection API, allows re-opening of new pipes, and enforces a basic send/receive protocol
+    """
+
+    def __init__(self, pipe: Optional[Connection] = None):
+        self.pipe: Optional[Connection] = pipe
+
+    def closed(self) -> bool:
+        return self.pipe is None
+
+    def reopen(self, pipe: Connection):
+        self.pipe = pipe
+
+    def send(self, key: str, *data: Any):
+        if self.pipe is not None:
+            try:
+                self.pipe.send((key, *data))
+            except BrokenPipeError:
+                self.pipe = None
+
+    def poll(self) -> Generator[Tuple[Any, ...], None, None]:
+        try:
+            while self.pipe is not None and self.pipe.poll():
+                yield self.pipe.recv()
+        except BrokenPipeError:
+            self.pipe = None

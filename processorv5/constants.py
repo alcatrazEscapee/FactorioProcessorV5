@@ -7,8 +7,17 @@ INSTRUCTION_MEMORY_SIZE = 7680
 
 FIRST_GENERAL_MEMORY_ADDRESS = 20
 
-COUNTER_PORT = 2000
-CONTROL_PORT = 3000
+CONTROL_PORT = 2000
+CONTROL_PORT_WIDTH = 5
+
+CONTROL_PORT_X = 2000
+CONTROL_PORT_UP = 2001
+CONTROL_PORT_DOWN = 2002
+CONTROL_PORT_LEFT = 2003
+CONTROL_PORT_RIGHT = 2004
+
+COUNTER_PORT = 3000
+
 RANDOM_PORT = 4000
 
 SCREEN_WIDTH = 32
@@ -112,6 +121,7 @@ class Instructions(Enum):
     SET = 'set'  # set X Y -> add X Y r0
     SETI = 'seti'  # set X #M -> addi X r0 #M
     BR = 'br'  # br L -> beq r0 r0 L
+    NOT = 'not'  # not X Y -> nor X Y r0
 
     GFLUSH = 'gflush'
     GLSI = 'glsi'

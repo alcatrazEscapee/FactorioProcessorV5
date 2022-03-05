@@ -1,9 +1,9 @@
 # This is a hardware level model of the ProcessorV5 architecture
 # The purpose is to be able to simulate the processor architecture before implementing it in the target medium (Factorio combinators)
-from typing import List, Tuple, Callable, NamedTuple, Optional, Any
+from typing import List, Tuple, Callable, NamedTuple, Optional, Any, Sequence, Dict
 from enum import Enum
 from constants import Opcodes, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
-from utils import ImageBuffer
+from utils import ImageBuffer, AnyInt
 from numpy import int32, uint64
 
 import utils
@@ -34,6 +34,8 @@ class OperandData(NamedTuple):
 
 
 class Device:
+    def writes(self, addr: int32) -> bool: return self.owns(addr)
+    def reads(self, addr: int32) -> bool: return self.owns(addr)
     def owns(self, addr: int32) -> bool: return False
     def get(self, addr: int32) -> int32: return int32(0)
     def set(self, addr: int32, value: int32): pass
@@ -89,16 +91,17 @@ class GPU:
         elif ir.gpu_opcode == GPUInstruction.GMVI:
             self.image = self.translate(ir.op1, ir.op3)
         else:
-            raise NotImplementedError
+            self.processor.throw(ProcessorErrorType.GPU_INVALID_OPCODE, ir.gpu_opcode)
 
     def flush(self):
         pass
 
     def gpu_mem_get(self, addr: int32) -> ImageBuffer:
         if 0 <= addr < constants.GPU_MEMORY_SIZE and addr < len(self.processor.sprites):
-            return self.processor.sprites[addr]
-        else:
-            self.processor.exception_handle(self.processor, ProcessorErrorType.GPU_MEMORY_READ.create('Tried to read from invalid or uninitialized GPU ROM address: %d' % addr))
+            if (sprite := self.processor.sprites[addr]) is not None:
+                return sprite
+            return self.processor.throw(ProcessorErrorType.GPU_UNINITIALIZED_MEMORY, addr)
+        return self.processor.throw(ProcessorErrorType.GPU_INVALID_MEMORY_ADDRESS, addr)
 
     def compose(self, func: GPUFunction) -> ImageBuffer:
         return ImageBuffer.create(lambda x, y: func.apply_str(self.buffer[x, y], self.image[x, y]))
@@ -108,41 +111,49 @@ class GPU:
 
 
 class ProcessorErrorType(Enum):
-    ASSERT = 'Assertion Failed'
-    INVALID_MEMORY_ADDRESS = 'Memory Read Error (Unhandled Address)'
-    UNINITIALIZED_MEMORY_READ = 'Memory Read Error (Uninitialized)'
-    MEMORY_WRITE = 'Memory Write Error (Unhandled Address)'
-    GPU_MEMORY_READ = 'GPU Memory Read Error'
+    GPU_UNINITIALIZED_MEMORY = 'Address=%d'
+    GPU_INVALID_MEMORY_ADDRESS = 'Address=%d'
+    GPU_INVALID_OPCODE = 'Opcode=%d'
+    UNINITIALIZED_MEMORY = 'Address=%d'
+    INVALID_MEMORY_ADDRESS_ON_READ = 'Address=%d'
+    INVALID_MEMORY_ADDRESS_ON_WRITE = 'Address=%d'
+    INVALID_OPCODE = 'Opcode=%d'
+    UNINITIALIZED_INSTRUCTION = 'PC=%d'
+    INVALID_INSTRUCTION_ADDRESS = 'PC=%d'
+    ASSERT_FAILED = 'At assert %s = %d (got %d)'
 
-    def create(self, message: str):
-        return ProcessorError(self, message)
+    def create(self, *args: Any):
+        return ProcessorError(self, *args)
 
 class ProcessorError(Exception):
 
-    def __init__(self, reason: 'ProcessorErrorType', message: str):
+    def __init__(self, reason: 'ProcessorErrorType', *args: Any):
         self.reason: 'ProcessorErrorType' = reason
-        self.message: str = message
+        self.message: str = reason.value % args if len(args) > 0 else reason.value
 
     def __str__(self):
-        return self.reason.value + ': ' + self.message
+        return self.reason.name.replace('_', ' ').title() + ': ' + self.message
 
+def default_exception_handle(_, e: ProcessorError): raise e
 
 class Processor:
 
-    def __init__(self, exception_handle: Callable[['Processor', ProcessorError], Any] = None):
-        if exception_handle is None:
-            exception_handle = uncaught_exception_handler
-
+    def __init__(self, instructions: Sequence[AnyInt] = (), sprites: Sequence[str] = (), exception_handle: Callable[['Processor', ProcessorError], Any] = default_exception_handle):
         self.memory: List[Optional[int32]] = [None] * constants.MAIN_MEMORY_SIZE  # N x 32b
         self.memory[0] = int32(0)  # R0
-        self.instructions: List[uint64] = [uint64(0)] * constants.INSTRUCTION_MEMORY_SIZE  # N x 64b
-        self.sprites: List[ImageBuffer] = [ImageBuffer.empty()] * constants.GPU_MEMORY_SIZE  # N x 32x32b
+        self.instructions: List[Optional[uint64]] = [None] * constants.INSTRUCTION_MEMORY_SIZE  # N x 64b
+        self.sprites: List[Optional[ImageBuffer]] = [None] * constants.GPU_MEMORY_SIZE  # N x 32x32b
+
+        for i, inst in enumerate(instructions):
+            self.instructions[i] = uint64(inst)
+        for i, sprite in enumerate(sprites):
+            self.sprites[i] = ImageBuffer.unpack(sprite)
+
         self.exception_handle = exception_handle
 
         self.running = False
         self.pc = int32(0)
         self.pc_next = int32(0)
-        self.error_code = int32(0)
 
         # Peripheral Devices
         self.r0 = ZeroRegisterDevice()
@@ -152,11 +163,8 @@ class Processor:
 
         self.gpu = GPU(self)
 
-    def load(self, instructions: List[int], sprites: List[str]):
-        for i, inst in enumerate(instructions):
-            self.instructions[i] = uint64(inst)
-        for i, sprite in enumerate(sprites):
-            self.sprites[i] = ImageBuffer.unpack(sprite)
+    def throw(self, e: ProcessorErrorType, *args: Any) -> Any:
+        self.exception_handle(self, e.create(*args))
 
     def run(self):
         self.running = True
@@ -170,12 +178,14 @@ class Processor:
         # Processor Tick
         ir = self.inst_get()
         ir_data: IRData = decode_ir(ir)
-        if ir_data.opcode == Opcodes.GPU.value and ir_data.gpu_opcode == GPUInstruction.GFLUSH.value:
-            print(self.pc, self.counter.tick_count, ir_data)
         self.pc_next = self.pc + int32(1)
+        if ir_data.opcode not in INSTRUCTIONS:
+            return self.throw(ProcessorErrorType.INVALID_OPCODE, ir_data.opcode)
+
         inst = INSTRUCTIONS[ir_data.opcode]
         inst.exec(self, ir_data)  # writes to memory
         self.pc = self.pc_next  # writes to pc
+
         # Device Tick
         for device in self.devices:
             device.tick()
@@ -196,12 +206,8 @@ class Processor:
     def do_assert(self, ir_data: IRData):
         actual, expected = self.mem_get_operand(ir_data.op3), ir_data.imm26
         if actual != expected:
-            self.exception_handle(self, ProcessorErrorType.ASSERT.create('At assert %s = %d (got %d)' % (dissasembler.decode_address(ir_data.op3), expected, actual)))
+            self.throw(ProcessorErrorType.ASSERT_FAILED, dissasembler.decode_address(ir_data.op3), expected, actual)
             self.running = False
-
-    def error(self, code: int32):
-        self.error_code = code
-        self.running = False
 
     def mem_get_operand(self, operand: int32) -> int32:
         """
@@ -221,14 +227,14 @@ class Processor:
         Requires one 'read' channel
         """
         if 1 <= addr < constants.MAIN_MEMORY_SIZE:
-            value = self.memory[addr]
-            if value is None:
-                return self.exception_handle(self, ProcessorErrorType.UNINITIALIZED_MEMORY_READ.create('At address: %d' % addr))
-            return value
+            if (value := self.memory[addr]) is not None:
+                return value
+            return self.throw(ProcessorErrorType.UNINITIALIZED_MEMORY, addr)
+
         for device in self.devices:
-            if device.owns(addr):
+            if device.reads(addr):
                 return device.get(addr)
-        return self.exception_handle(self, ProcessorErrorType.INVALID_MEMORY_ADDRESS.create('At address: %d' % addr))
+        return self.throw(ProcessorErrorType.INVALID_MEMORY_ADDRESS_ON_READ, addr)
 
     def mem_set_operand(self, operand: int32, value: int32):
         """
@@ -250,17 +256,48 @@ class Processor:
         if 1 <= addr < constants.MAIN_MEMORY_SIZE:
             self.memory[addr] = value
             return
+
         for device in self.devices:
-            if device.owns(addr):
-                device.set(addr, value)
-                return
-        self.exception_handle(self, ProcessorErrorType.MEMORY_WRITE.create('Tried to write to invalid memory address: %d' % addr))
+            if device.writes(addr):
+                return device.set(addr, value)
+
+        self.throw(ProcessorErrorType.INVALID_MEMORY_ADDRESS_ON_WRITE, addr)
 
     def inst_get(self) -> uint64:
         """
         Perform an instruction read
         """
-        return self.instructions[self.pc]
+        if 0 <= self.pc < len(self.instructions):
+            if (inst := self.instructions[self.pc]) is not None:
+                return inst
+            return self.throw(ProcessorErrorType.UNINITIALIZED_INSTRUCTION, self.pc)
+        return self.throw(ProcessorErrorType.INVALID_INSTRUCTION_ADDRESS, self.pc)
+
+    def memory_utilization(self) -> Tuple[int, str]: return get_utilization('M', self.memory)
+    def instruction_memory_utilization(self) -> Tuple[int, str]: return get_utilization('I', self.instructions)
+    def gpu_memory_utilization(self) -> Tuple[int, str]: return get_utilization('G', self.sprites)
+
+    def debug_view(self):
+        # Show an area around the non-zero memory
+        memory_view = set()
+        for i, m in enumerate(self.memory):
+            if m != 0 and m is not None:
+                memory_view |= {i - 1, i, i + 1}
+
+        # Show a view of the assembly near the area
+        decoded = dissasembler.decode(self.instructions)
+        decoded_view = decoded[self.pc - 3:self.pc] + [decoded[self.pc] + ' <-- HERE'] + decoded[self.pc + 1:self.pc + 4]
+
+        return '\n'.join([
+            'PC: %d' % self.pc,
+            '',
+            'Disassembly:',
+            *decoded_view,
+            '',
+            'Memory:',
+            'Addr | Hex  | Dec',
+            *['%04d | %s | %s' % (i, format(int(m), '08x') if m is not None else '????', '%d' % m if m is not None else '?') for i, m in enumerate(self.memory) if i in memory_view]
+        ])
 
 
 def decode_ir(ir: uint64) -> IRData:
@@ -284,30 +321,9 @@ def decode_operand(operand: int32) -> OperandData:
     )
 
 
-def debug_view(proc: Processor):
-    # Show an area around the non-zero memory
-    memory_view = set()
-    for i, m in enumerate(proc.memory):
-        if m != 0 and m is not None:
-            memory_view |= {i - 1, i, i + 1}
-
-    # Show a view of the assembly near the area
-    decoded = dissasembler.decode(proc.instructions)
-    decoded_view = decoded[proc.pc - 3:proc.pc] + [decoded[proc.pc] + ' <-- HERE'] + decoded[proc.pc + 1:proc.pc + 4]
-
-    return '\n'.join([
-        'PC: %d' % proc.pc,
-        '',
-        'Disassembly:',
-        *decoded_view,
-        '',
-        'Memory:',
-        'Addr | Hex  | Dec',
-        *['%04d | %s | %s' % (i, format(int(m), '08x') if m is not None else '????', '%d' % m if m is not None else '?') for i, m in enumerate(proc.memory) if i in memory_view]
-    ])
-
-def uncaught_exception_handler(proc: Processor, e: ProcessorError):
-    raise e
+def get_utilization(key: str, ls: Sequence[Optional[Any]]) -> Tuple[int, str]:
+    count = sum(m is not None for m in ls)
+    return count, '%s %.1f%%' % (key, 100 * count / len(ls))
 
 
 class Instruction:
@@ -361,21 +377,14 @@ class SpecialInstruction(Instruction):
     def exec(self, model: Processor, ir: IRData):
         self.method(model, ir)
 
-class InvalidInstruction(Instruction):
-    def __init__(self, error: Opcodes):
-        super().__init__(error)
 
-    def exec(self, model: Processor, ir: IRData):
-        model.error(int32(self.opcode.value))
-
-
-def validate(*instructions: Instruction) -> Tuple[Instruction]:
+def validate(*instructions: Instruction) -> Dict[int32, Instruction]:
     for i, inst in enumerate(instructions):
         assert i == inst.opcode.value, 'Validation Problem: Instruction %s has opcode %s but is at index %d' % (type(inst), repr(inst.opcode), i)
-    return instructions
+    return {i.opcode: i for i in instructions}
 
 
-INSTRUCTIONS: Tuple[Instruction] = validate(
+INSTRUCTIONS: Dict[int32, Instruction] = validate(
     ArithmeticInstruction(Opcodes.ADD, lambda y, z: y + z),
     ArithmeticInstruction(Opcodes.SUB, lambda y, z: y - z),
     ArithmeticInstruction(Opcodes.MUL, lambda y, z: y * z),
