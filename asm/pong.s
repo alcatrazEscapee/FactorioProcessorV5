@@ -11,7 +11,7 @@ sprite SPRITE_TEXT_WIN TEXTURE_PONG [ 0 13 22 7 ]
 
 alias WINNING_SCORE 4  # Score needed to win, must be <= 10
 
-alias TICK_DELTA 100
+alias TICK_DELTA 50  # Maximum instructions executed per main loop, for consistency
 
 alias BALL_WIDTH 2
 alias PADDLE_HEIGHT 6
@@ -79,7 +79,7 @@ main_ai_move:
     blti @ballX 15 main_player_move
     addi r1 @computerY 2
     beq r1 @ballY main_player_move
-    bgt r1 @ballY main_ai_move_down
+    blt r1 @ballY main_ai_move_down
 main_ai_move_up:
     blei @computerY MIN_PADDLE_Y main_player_move
     subi @computerY @computerY 1

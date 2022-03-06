@@ -7,6 +7,8 @@ import pytest
 
 def test_branch_backwards(): run('branch_backwards')
 def test_branch_forward(): run('branch_forward')
+def test_branch_less_than(): run('branch_less_than')
+def test_branch_less_than_equal(): run('branch_less_than_equal')
 def test_call_return(): run('call_return')
 def test_call_return_nested(): run('call_return_nested')
 def test_call_return_special_constant(): run('call_return_special_constant')

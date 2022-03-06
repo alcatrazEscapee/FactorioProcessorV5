@@ -357,7 +357,7 @@ class BranchInstruction(Instruction):
         self.comparator = comparator
 
     def exec(self, model: Processor, ir: IRData):
-        if self.comparator(model.mem_get_operand(ir.op3), model.mem_get_operand(ir.op1)):
+        if self.comparator(model.mem_get_operand(ir.op1), model.mem_get_operand(ir.op3)):
             model.branch_to(ir.branch)
 
 class BranchImmediateInstruction(Instruction):
