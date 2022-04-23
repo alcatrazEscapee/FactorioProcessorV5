@@ -58,10 +58,10 @@ class Scanner:
     WHITESPACE = set('\r\t ')
     NEWLINE = set('\n')
     IDENTIFIER_START = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_')
-    NUMERIC_START = set('123456789-')
-    NUMERIC = set('0123456789')
-    NUMERIC_BINARY = set('01')
-    NUMERIC_HEX = set('0123456789abcdefABCDEF')
+    NUMERIC_START = set('123456789-+')
+    NUMERIC = set('0123456789_')
+    NUMERIC_BINARY = set('01_')
+    NUMERIC_HEX = set('0123456789abcdefABCDEF_')
     SPRITE = set('.#')
     IDENTIFIER = IDENTIFIER_START | NUMERIC
     INSTRUCTIONS = {i.value for i in Instructions}
