@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Tuple, List, Set, Optional, Union
+from typing import Tuple, List, Set, Optional, Union, Dict
 from utils import Interval
 from constants import Instructions, Registers
 
@@ -96,10 +96,15 @@ class Scanner:
         self.locations: List[Tuple[int, int]] = []
         self.line_num: int = 0
         self.error: Optional[ScanError] = None
+        self.directives: Dict[str, str] = {}
 
     def trace(self, file: str):
         with open(file, 'w') as f:
             start = False
+            if self.directives:
+                f.write('-- Directive Dump --\n')
+                for key, value in self.directives.items():
+                    f.write('%s - %s\n' % (key, value))
             for t in self.output_tokens:
                 if isinstance(t, ScanToken):
                     if start:
@@ -159,7 +164,7 @@ class Scanner:
             else:
                 self.err('Undefined integer prefix: \'0%s\'' % c)
         elif c == '#':
-            self.scan_comment()
+            self.scan_comment_or_directive()
         elif c == '"':
             self.scan_string()
         elif c in Scanner.SYNTAX:
@@ -216,12 +221,40 @@ class Scanner:
             self.err('Non-numeric character must follow integer: %s' % c)
         return acc
 
-    def scan_comment(self):
+    def scan_comment_or_directive(self):
         self.pointer += 1
         c = self.next()
-        while c not in Scanner.NEWLINE:
+        if c == '[':
             self.pointer += 1
             c = self.next()
+            key = ''
+            while c != '=':
+                key += c
+                if c in Scanner.NEWLINE:
+                    self.err('Expected \'=\' in #[...=...] directive')
+                self.pointer += 1
+                c = self.next()
+            self.pointer += 1  # Consume '='
+            c = self.next()
+            value = ''
+            while c != ']':
+                value += c
+                if c in Scanner.NEWLINE:
+                    self.err('Expected \']\' in #[...=...] directive')
+                self.pointer += 1
+                c = self.next()
+            self.pointer += 1
+            c = self.next()
+            if c not in Scanner.NEWLINE:
+                self.err('Expected newline after #[...=...] directive')
+            if key in self.directives:
+                self.err('Duplicate assignment of directive #[%s=...]' % key)
+            self.directives[key] = value
+        else:
+            # Scan regular comment, ignoring everything until a newline
+            while c not in Scanner.NEWLINE:
+                self.pointer += 1
+                c = self.next()
 
     def scan_string(self):
         self.pointer += 1

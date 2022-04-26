@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Tuple, List, Dict, Sequence, Optional, Union, Literal, Callable, Iterable
+from typing import Tuple, List, Dict, Sequence, Optional, Union, Any, Callable, Iterable
 from utils import Interval, TextureHelper
 from constants import Opcodes, Instructions, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from phases.scanner import Scanner, ScanToken
@@ -86,6 +86,9 @@ class ParseToken(IntEnum):
     EOF = enum.auto()
     ASSERT = enum.auto()
     ERROR = enum.auto()
+
+    def equals(self, other: Any) -> bool:
+        return type(other) == ParseToken and self == other
 
 
 class ParseError(Exception):
@@ -815,7 +818,7 @@ class InlineFunctionParser(Parser):
         parent_origin = parent.code_point
         label = False
         for token in self.output_tokens:
-            if token == ParseToken.LABEL:
+            if ParseToken.LABEL.equals(token):
                 label = True
                 parent.push(token)
             elif label:

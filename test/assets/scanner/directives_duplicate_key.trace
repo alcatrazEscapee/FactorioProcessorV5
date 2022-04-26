@@ -1,0 +1,5 @@
+-- Directive Dump --
+example - bad
+ERROR Duplicate assignment of directive #[example=...] on line 2:
+#[example=good]
+---------------^

@@ -8,6 +8,10 @@ TEST_DIR = 'assets/scanner/'
 
 
 def test_comments(): scan('comments')
+def test_directives(): scan('directives')
+def test_directives_duplicate_key(): scan('directives_duplicate_key')
+def test_directives_no_closing(): scan('directives_no_closing')
+def test_directives_no_equals(): scan('directives_no_equals')
 def test_empty(): scan('empty')
 def test_identifiers(): scan('identifiers')
 def test_instructions(): scan('instructions')

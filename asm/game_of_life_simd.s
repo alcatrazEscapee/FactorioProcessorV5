@@ -2,6 +2,7 @@
 # Comparison with game_of_life.s:
 # Total Size: 96 -> 77 (Still < 2% Utilization)
 # Average Instructions Executed / Loop: 52,764 -> 1,829 (+96% Speedup)
+#[sim_clock_time=500us]
 
 alias RNG_PORT 4000
 

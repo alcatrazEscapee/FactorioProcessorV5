@@ -65,6 +65,7 @@ class Assembler:
 
         self.code: Optional[List[int]] = None
         self.sprites: Optional[List[str]] = None
+        self.directives: Optional[Dict[str, str]] = None
         self.error: Optional[str] = None
 
     def assemble(self) -> bool:
@@ -84,6 +85,7 @@ class Assembler:
 
         self.code = codegen.output_code
         self.sprites = codegen.sprites
+        self.directives = scanner.directives
         return True
 
 

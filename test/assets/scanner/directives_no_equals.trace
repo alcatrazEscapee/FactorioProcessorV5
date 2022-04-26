@@ -1,0 +1,3 @@
+ERROR Expected '=' in #[...=...] directive on line 1:
+#[not_ended
+-----------^

@@ -1,4 +1,5 @@
 # Pong
+#[sim_clock_time=4ms]
 
 include "./stdio.s"
 include "./7seg_numbers.s"

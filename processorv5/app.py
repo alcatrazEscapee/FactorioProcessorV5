@@ -17,6 +17,8 @@ import constants
 REFRESH_MS = 10
 CLOCK_NS = 20_000_000
 
+DIRECTIVE_SIM_CLOCK_TIME = 'sim_clock_time'
+
 P2C_SCREEN = 'screen'
 P2C_STATS = 'stats'
 P2C_HALT = 'halt'
@@ -43,39 +45,43 @@ class App:
 
         self.load_button = Button(self.buttons, text='Load', command=self.on_load)
         self.load_button.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
+        self.load_last_file: str | None = None
+
+        self.reload_button = Button(self.buttons, text='Reload', command=self.on_reload)
+        self.reload_button.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
 
         self.run_button = Button(self.buttons, text='Run', command=self.on_run)
-        self.run_button.grid(row=1, column=0, sticky='ew', padx=5, pady=5)
+        self.run_button.grid(row=2, column=0, sticky='ew', padx=5, pady=5)
 
         self.halt_button = Button(self.buttons, text='Halt', command=self.on_halt)
-        self.halt_button.grid(row=2, column=0, sticky='ew', padx=5, pady=5)
+        self.halt_button.grid(row=3, column=0, sticky='ew', padx=5, pady=5)
 
         self.info_text = StringVar()
         self.info_text.set('Ready')
         self.info_label = Label(self.buttons, textvariable=self.info_text)
-        self.info_label.grid(row=3, column=0, sticky='ew', padx=5, pady=5)
+        self.info_label.grid(row=4, column=0, sticky='ew', padx=5, pady=5)
 
         self.perf_clock_ns = CLOCK_NS
         self.perf_text = StringVar()
         self.perf_text.set(format_frequency(1_000_000_000 / self.perf_clock_ns))
         self.perf_label = Label(self.buttons, textvariable=self.perf_text)
-        self.perf_label.grid(row=4, column=0, sticky='ew', padx=5, pady=0)
+        self.perf_label.grid(row=5, column=0, sticky='ew', padx=5, pady=0)
         self.perf_label.bind('<Button-1>', self.on_perf_text_click)
 
         self.mem_text = StringVar()
         self.mem_text.set('')
         self.mem_label = Label(self.buttons, textvariable=self.mem_text)
-        self.mem_label.grid(row=5, column=0, sticky='ew', padx=5, pady=0)
+        self.mem_label.grid(row=6, column=0, sticky='ew', padx=5, pady=0)
 
         self.inst_mem_text = StringVar()
         self.inst_mem_text.set('')
         self.inst_mem_label = Label(self.buttons, textvariable=self.inst_mem_text)
-        self.inst_mem_label.grid(row=6, column=0, sticky='ew', padx=5, pady=0)
+        self.inst_mem_label.grid(row=7, column=0, sticky='ew', padx=5, pady=0)
 
         self.gpu_mem_text = StringVar()
         self.gpu_mem_text.set('')
         self.gpu_mem_label = Label(self.buttons, textvariable=self.gpu_mem_text)
-        self.gpu_mem_label.grid(row=7, column=0, sticky='ew', padx=5, pady=0)
+        self.gpu_mem_label.grid(row=8, column=0, sticky='ew', padx=5, pady=0)
 
         self.canvas = Canvas(self.root, bg='white', height=320, width=320)
         self.canvas.grid(row=0, column=1, padx=5, pady=5)
@@ -110,27 +116,18 @@ class App:
         self.root.after(REFRESH_MS, self.tick)
 
     def on_load(self):
-        path = filedialog.askopenfilename(
+        if path := filedialog.askopenfilename(
             filetypes=[('Assembly Files', '*.s'), ('All Files', '*.*')],
             initialdir=os.path.join(os.getcwd(), '../')
-        )
-        if not path:
-            return
+        ):
+            self.load_last_file = path
+            self.assemble(path)
 
-        with open(path, 'r', encoding='utf-8') as f:
-            text = f.read()
-
-        asm = Assembler(path, text, enable_assertions=True)
-        if not asm.assemble():
-            error = Toplevel(self.root)
-            error.grab_set()
-
-            text = Label(error, text=asm.error)
-            text.pack()
-            return
-
-        self.asm = asm
-        self.info_text.set('Loaded')
+    def on_reload(self):
+        if self.load_last_file is not None:
+            self.assemble(self.load_last_file)
+        else:
+            self.show_error_modal('No assembly file selected, cannot reload.')
 
     def on_run(self):
         if self.asm is not None:
@@ -174,11 +171,47 @@ class App:
         self.close_processor_thread()
         self.root.destroy()
 
+    def assemble(self, path: str):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        except OSError:
+            return self.show_error_modal('Error loading from file: %s' % path)
+
+        asm = Assembler(path, text, enable_assertions=True)
+        if not asm.assemble():
+            return self.show_error_modal(asm.error)
+
+        self.asm = asm
+        self.info_text.set('Loaded')
+
+        # Accept certain directives from the assembly
+        if DIRECTIVE_SIM_CLOCK_TIME in asm.directives:
+            self.set_frequency(asm.directives[DIRECTIVE_SIM_CLOCK_TIME])
+
+    def set_frequency(self, value: str):
+        if value.endswith('ns'):
+            self.perf_clock_ns = int(value[:-2])
+        elif value.endswith('us'):
+            self.perf_clock_ns = int(value[:-2]) * 1_000
+        elif value.endswith('ms'):
+            self.perf_clock_ns = int(value[:-2]) * 1_000_000
+        else:
+            self.perf_clock_ns = int(value) * 1_000_000
+        self.perf_text.set(format_frequency(1_000_000_000 / self.perf_clock_ns))
+
     def update_screen(self, screen: ImageBuffer):
         self.canvas.delete(tkinter.ALL)
         for x in range(constants.SCREEN_WIDTH):
             for y in range(constants.SCREEN_HEIGHT):
                 self.canvas.create_rectangle(x * 10, y * 10, x * 10 + 10, y * 10 + 10, fill='white' if screen[x, y] == '#' else 'black')
+
+    def show_error_modal(self, error_text: str):
+        error = Toplevel(self.root)
+        error.grab_set()
+
+        text = Label(error, text=error_text)
+        text.pack()
 
     def close_processor_thread(self):
         self.processor_pipe.send(C2P_HALT)
@@ -247,7 +280,7 @@ class AppGPU(GPU):
         self.pipe = pipe
 
     def flush(self):
-        self.pipe.send('screen', self.screen)
+        self.pipe.send(P2C_SCREEN, self.screen)
 
 
 class AppControlDevice(Device):

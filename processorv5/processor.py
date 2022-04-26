@@ -111,16 +111,16 @@ class GPU:
 
 
 class ProcessorErrorType(Enum):
-    GPU_UNINITIALIZED_MEMORY = 'Address=%d'
-    GPU_INVALID_MEMORY_ADDRESS = 'Address=%d'
-    GPU_INVALID_OPCODE = 'Opcode=%d'
-    UNINITIALIZED_MEMORY = 'Address=%d'
-    INVALID_MEMORY_ADDRESS_ON_READ = 'Address=%d'
-    INVALID_MEMORY_ADDRESS_ON_WRITE = 'Address=%d'
-    INVALID_OPCODE = 'Opcode=%d'
-    UNINITIALIZED_INSTRUCTION = 'PC=%d'
-    INVALID_INSTRUCTION_ADDRESS = 'PC=%d'
-    ASSERT_FAILED = 'At assert %s = %d (got %d)'
+    GPU_UNINITIALIZED_MEMORY = 'GPU Uninitialized Memory Address=%d'
+    GPU_INVALID_MEMORY_ADDRESS = 'GPU Invalid Memory Address=%d'
+    GPU_INVALID_OPCODE = 'GPU Invalid Opcode=%d'
+    UNINITIALIZED_MEMORY = 'Uninitialized Address=%d'
+    INVALID_MEMORY_ADDRESS_ON_READ = 'Invalid Memory Write Address=%d'
+    INVALID_MEMORY_ADDRESS_ON_WRITE = 'Invalid Memory Read Address=%d'
+    INVALID_OPCODE = 'Invalid Opcode=%d'
+    UNINITIALIZED_INSTRUCTION = 'Uninitialized Instruction at PC=%d'
+    INVALID_INSTRUCTION_ADDRESS = 'Invalid Instruction Address at PC=%d'
+    ASSERT_FAILED = 'Assertion Failed at assert %s = %d (got %d)'
 
     def create(self, *args: Any):
         return ProcessorError(self, *args)
