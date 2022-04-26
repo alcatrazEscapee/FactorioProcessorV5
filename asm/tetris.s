@@ -1,16 +1,16 @@
 # Tetris
-#[sim_clock_time=500us]
+#[sim_clock_time=1ms]
 
 include "./stdio.s"
 include "./7seg_numbers.s"
 
 texture TEXTURE_BACKGROUND "./textures/tetris_background.png"
-texture TEXTURE_LOADING "./textures/tetris_loading.png"
-texture TEXTURE_START "./textures/tetris_start.png"
+texture TEXTURE_LOADING    "./textures/tetris_loading.png"
+texture TEXTURE_START      "./textures/tetris_start.png"
 
 sprite SPRITE_BACKGROUND TEXTURE_BACKGROUND [ 0 0 32 32 ]
-sprite SPRITE_LOADING TEXTURE_LOADING [ 0 0 32 32 ]
-sprite SPRITE_START TEXTURE_START [ 0 0 32 32 ]
+sprite SPRITE_LOADING    TEXTURE_LOADING    [ 0 0 32 32 ]
+sprite SPRITE_START      TEXTURE_START      [ 0 0 32 32 ]
 
 
 # ======================= Loading + Start Screens ==================================
@@ -51,7 +51,8 @@ word fullRowMask  # Just the full row, used for flashing when a row is complete
 word pieceX, pieceY  # (6, 0) is the position at which a piece spawns. Coordinates are in quadrant IV semantics (so +x >, +y \/ )
 word pieceType, nextPieceType
 word pieceRotation
-word pieceIndex
+
+word prevPieceX, prevPieceY, prevPieceRotation  # Used to erase from screen to prevent entire screen re-draw
 
 word mainLoopIteration, mainLoopMaxTimer
 word mainLoopNextPieceFlag
@@ -67,6 +68,7 @@ word pointer, next_pointer
 word COUNTER, CONTROL_UP, CONTROL_DOWN, CONTROL_LEFT, CONTROL_RIGHT, CONTROL_X
 word RNG
 
+word CONSTANT_2
 
 
 alias FULL_ROW  0b111111111111  # 10-bit wide, + 2-bit walls
@@ -94,6 +96,7 @@ alias PIECE_T_180 0b0000_0000_0111_0010
 alias PIECE_T_270 0b0000_0010_0110_0010
 
 alias MAIN_LOOP_MAX_TIMER 5
+alias INCOMPLETE_ROW_FLAG -99
 
 
 # ========================= Setup / Initialization ============================
@@ -180,6 +183,11 @@ inline first_time_setup:
 	seti @scoreValues[2] 3
 	seti @scoreValues[3] 8
 	seti @scoreValues[4] 30
+	
+	# Misc
+	seti @CONSTANT_2 2
+	seti r15 0
+	seti r16 0
 
     # Default values for variables
     seti @score 0
@@ -269,52 +277,50 @@ inline check_for_intersection_with_board:
 	lsi  r5 @pieceType 2  # get the piece index from @pieceType, r14 (pieceRotation)
 	or   r5 r5 r14
 	addi r5 r5 pieces     # @r5 = pieces[the current piece]
+	
+	addi r6 r11 2		  # r6 = pieceX + 2
 		
 	# Slice 0
-	lsi  r1 @r4 4      # Shift left by four, so we can right shift the piece and not deal with negative shifts
-	andi r2 @r5 0b1111 # r2 = the four bits of pieces in this row
-	addi r3 r11 2
-	ls   r2 r2 r3      # r2 = the four bits of pieces in this row, shifted to the same space as the row
+	lsi  r1 @r4 4         # Shift left by four, so we can right shift the piece and not deal with negative shifts
+	andi r2 @r5 0b1111    # r2 = the four bits of pieces in this row
+	ls   r2 r2 r6         # r2 = the four bits of pieces in this row, shifted to the same space as the row
 		
-	and  r3 r1 r2      # r3 = any bits that collide
-	set  rv r3         # rv = r3 (initial condition)
+	and  r3 r1 r2         # r3 = any bits that collide
+	set  rv r3            # rv = r3 (initial condition)
 		
 	# Slice 1
-	subi r4 r4 1	   # r4--;
+	subi r4 r4 1	      # r4--;
 	
-	lsi  r1 @r4 4      # Shift left by four, so we can right shift the piece and not deal with negative shifts
-	rsi  r2 @r5 4      # r2 = the four bits of pieces in this row
+	lsi  r1 @r4 4         # Shift left by four, so we can right shift the piece and not deal with negative shifts
+	rsi  r2 @r5 4         # r2 = the four bits of pieces in this row
 	andi r2 r2 0b1111
-	addi r3 r11 2
-	ls   r2 r2 r3      # r2 = the four bits of pieces in this row, shifted to the same space as the row
+	ls   r2 r2 r6         # r2 = the four bits of pieces in this row, shifted to the same space as the row
 	
-	and  r3 r1 r2      # r3 = any bits that collide
-	or   rv rv r3      # rv |= r3
+	and  r3 r1 r2         # r3 = any bits that collide
+	or   rv rv r3         # rv |= r3
 		
 	# Slice 2
-	subi r4 r4 1	   # r4--;
+	subi r4 r4 1	      # r4--;
 	
-	lsi  r1 @r4 4      # Shift left by four, so we can right shift the piece and not deal with negative shifts
-	rsi  r2 @r5 8      # r2 = the four bits of pieces in this row
+	lsi  r1 @r4 4         # Shift left by four, so we can right shift the piece and not deal with negative shifts
+	rsi  r2 @r5 8         # r2 = the four bits of pieces in this row
 	andi r2 r2 0b1111
-	addi r3 r11 2
-	ls   r2 r2 r3      # r2 = the four bits of pieces in this row, shifted to the same space as the row
+	ls   r2 r2 r6         # r2 = the four bits of pieces in this row, shifted to the same space as the row
 	
-	and  r3 r1 r2      # r3 = any bits that collide
-	or   rv rv r3      # rv |= r3
+	and  r3 r1 r2         # r3 = any bits that collide
+	or   rv rv r3         # rv |= r3
 		
 	# Slice 3
-	subi r4 r4 1	   # r4--;
+	subi r4 r4 1	      # r4--;
 	
-	lsi  r1 @r4 4      # Shift left by four, so we can right shift the piece and not deal with negative shifts
-	rsi  r2 @r5 12     # r2 = the four bits of pieces in this row
-	addi r3 r11 2
-	ls   r2 r2 r3      # r2 = the four bits of pieces in this row, shifted to the same space as the row
+	lsi  r1 @r4 4         # Shift left by four, so we can right shift the piece and not deal with negative shifts
+	rsi  r2 @r5 12        # r2 = the four bits of pieces in this row
+	ls   r2 r2 r6         # r2 = the four bits of pieces in this row, shifted to the same space as the row
 	
-	and  r3 r1 r2      # r3 = any bits that collide
-	or   rv rv r3      # rv |= r3
+	and  r3 r1 r2         # r3 = any bits that collide
+	or   rv rv r3         # rv |= r3
 		
-	eqi  rv rv 0       # rv = rv == 0, so 1 = valid, and 0 = invalid
+	eqi  rv rv 0          # rv = rv == 0, so 1 = valid, and 0 = invalid
     ret
 
 
@@ -331,24 +337,24 @@ inline check_for_completed_rows:
     seti @next_pointer rows
 
     # Clear fullRows
-    seti @fullRows[0] -99
-    seti @fullRows[1] -99
-    seti @fullRows[2] -99
-    seti @fullRows[3] -99
+    seti @fullRows[0] INCOMPLETE_ROW_FLAG
+    seti @fullRows[1] INCOMPLETE_ROW_FLAG
+    seti @fullRows[2] INCOMPLETE_ROW_FLAG
+    seti @fullRows[3] INCOMPLETE_ROW_FLAG
 
 check_for_completed_rows_loop:
     bnei @@pointer FULL_ROW check_for_completed_rows_skip
 
-    addi r1 r1 1  # Increment counter
+    addi r1 r1 1                        # Increment counter
     subi @next_pointer @next_pointer 1  # Copy over current row
 
-    addi r2 r1 fullRows  # & fullRows[r1]
-    subi @r2 @pointer rows  # obtain index of row from pointer
+    addi r2 r1 fullRows                 # & fullRows[r1]
+    subi @r2 @pointer rows              # obtain index of row from pointer
 
     br check_for_completed_rows_next
 
 check_for_completed_rows_skip:
-    set @@next_pointer @@pointer # Copy row if not complete
+    set @@next_pointer @@pointer        # Copy row if not complete
 
 check_for_completed_rows_next:
 
@@ -379,8 +385,8 @@ wait_for_key_x_loop:
     ret
 
 inline wait_200ms:
-	# Waits approximately an absolute 200ms @ sim_clock_time=500us
-	seti r1 200
+	# Waits approximately an absolute 200ms @ sim_clock_time=1000us
+	seti r1 100
 wait_200ms_loop:
 	subi r1 r1 1
 	bgti r1 0 wait_200ms_loop
@@ -454,22 +460,49 @@ draw_game_loop:
     ret
 
 
+inline draw_only_modified_piece:
+	# Draws only the nessecary changes for a single piece movement
+	# Masks away the previous piece position on the board
+	# Then re-draws the current piece
+	# Uses @prevPieceX, @prevPieceY, @pieceType, @prevPieceRotation for the previous piece state
+	
+	lsi  r3 @pieceType 2          # r3 = piece index << 2
+	addi r3 r3 pieces             # @r3 = pieces[pieceType, any rotation]
+	
+    or   r1 r3 @prevPieceRotation # r1 = prev piece index
+    glsd @r1 G_4x8
+    addi r1 0 @prevPieceX         # Calculate screen position
+    addi r2 7 @prevPieceY
+    gmv  r1 r2
+	gcb  G_ERASE
+	
+	or   r1 r3 @pieceRotation     # r1 = current piece index
+	glsd @r1 G_4x8
+	addi r1 0 @pieceX             # Calculate screen position
+	addi r2 7 @pieceY
+	gmv  r1 r2
+	gcb  G_DRAW_ALPHA
+	
+	gflush
+	ret
+
+
 inline draw_completed_rows_flash:
     # Draws and runs the animation of filled rows flashing
     # Expects fullRows to be initialized to indexes of rows that need to flash
     # Masks + Toggles the affected rows once, multiple invocations in sequence are required to do the animation
 
     seti @pointer fullRows
-    seti r1 2
     seti r2 27
 draw_completed_rows_flash_loop:
-    subi r2 27 @@pointer  # Invalid row -> @@pointer will be very negative, as a result the image will be empty
-    glsd @fullRowMask G_32x1  # Mask the row
-    gmv r1 r2  # Translate over the existing row
-    gcb G_TOGGLE  # Toggle what is already there
+	beqi @@pointer INCOMPLETE_ROW_FLAG draw_completed_rows_flash_next
+	glsd @fullRowMask G_32x1     # Mask the row
+    subi r2 27 @@pointer         # Position r2 = 27 - fullRows[i]
+    gmv  @CONSTANT_2 r2          # Translate over the existing row
+    gcb  G_TOGGLE                # Toggle what is already there
 
-    # Increment and loop
-    addi @pointer @pointer 1
+draw_completed_rows_flash_next:
+    addi @pointer @pointer 1     # Increment and loop
     subi r2 r2 1
     blti @pointer fullRows[4] draw_completed_rows_flash_loop
 
@@ -485,8 +518,14 @@ main:
     call first_time_setup       # Initialize memory
     call draw_start_screen      # Switch to displaying the start screen
     call wait_for_key_x         # Wait for the 'x' key to be pressed to start game
+	call draw_game              # First, call directly into draw_game, to draw the initial setup
 
 main_loop:
+
+	# Performance Monitoring
+	#sub r16 @@COUNTER r15
+	#set r15 @@COUNTER
+	#print [ r16 ]
 
 	# If no piece currently selected, then generate a new piece.
 	# Do an immediate piece check if the game should end, if so, branch out of loop and to game end animation
@@ -540,14 +579,20 @@ main_no_completed_rows:
 	br   main_wait_for_next_tick              # otherwise advance to next tick
 
 main_loop_no_next_piece:
+
+	# First, copy the current piece into the previous markers
+	set @prevPieceX @pieceX
+	set @prevPieceY @pieceY
+	set @prevPieceRotation @pieceRotation
+
 	# If on Nth cycle (or the 'down' key is pressed), then attempt to move down
 	# If move down is valid, then do move, then branch to end of loop
 	# Otherwise, halt piece
 	beq  @mainLoopIteration @mainLoopMaxTimer main_yes_move_down
 	beqi @@CONTROL_DOWN 1 main_yes_move_down
 	br   main_no_move_down
+
 main_yes_move_down:
-	
 	seti @mainLoopIteration 0  # mainLoopIteration = 0, reset loop
 	
 	set  r11 @pieceX           # Copy the moved-down piece into parameter variables
@@ -558,7 +603,8 @@ main_yes_move_down:
 	
 	beqi rv 0 main_move_down_halt           # branch to halt if we are blocked from moving down
 	addi @pieceY @pieceY 1					# @pieceY -= 1
-	br main_wait_for_next_tick              # moved down, so branch and wait for next tick
+	br main_redraw_only_changed_piece       # moved down, so branch and wait for next tick
+
 main_move_down_halt:
 	call intersect_piece_with_board         # Mask the current piece into the rows variables
 		
@@ -573,29 +619,29 @@ main_no_move_down:
 	set r12 @pieceY
 	set r14 @pieceRotation
 	
-	beqi @@CONTROL_UP 0 main_no_rotate  # Check rotation
+	beqi @@CONTROL_UP 0 main_no_rotate            # Check rotation
 	addi r14 r14 1
 	modi r14 r14 4
 main_no_rotate:
-
-	beqi @@CONTROL_LEFT 0 main_no_move_left  # Check left + right movements
+	beqi @@CONTROL_LEFT 0 main_no_move_left       # Check left + right movements
 	addi r11 r11 -1
 main_no_move_left:
 	beqi @@CONTROL_RIGHT 0 main_no_move_right
 	addi r11 r11 1
 main_no_move_right:
-
-	call check_for_intersection_with_board  # See if the prospective new piece location and rotation is valid
-	
-	beqi rv 0 main_cannot_move_or_rotate
-	set @pieceX r11         # Copy the changed piece to the actual piece state
+	call check_for_intersection_with_board        # See if the prospective new piece location and rotation is valid
+	beqi rv 0 main_redraw_only_changed_piece
+	set @pieceX r11                               # Copy the changed piece to the actual piece state
 	set @pieceY r12
 	set @pieceRotation r14
 
-main_cannot_move_or_rotate:
-	
-main_wait_for_next_tick:                          # Wait for tick, then loop back to beginning
 
+main_redraw_only_changed_piece:                   # End the current tick, and redraw only the changed piece
+	addi @mainLoopIteration @mainLoopIteration 1  # @mainLoopIteration++
+	call draw_only_modified_piece                 # Faster and simpler redraw call
+	br main_loop
+
+main_wait_for_next_tick:                          # Wait for tick, then loop back to beginning
 	addi @mainLoopIteration @mainLoopIteration 1  # @mainLoopIteration++
     call draw_game                                # Re-draw game
 	br   main_loop
