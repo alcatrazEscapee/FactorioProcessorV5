@@ -4,6 +4,7 @@
 from typing import Optional, Tuple, List, Dict
 
 from phases import Scanner, Parser, CodeGen
+from constants import Registers
 
 import sys
 import utils
@@ -17,9 +18,10 @@ def read_command_line_args():
 
     parser.add_argument('file', type=str, help='The assembly file to be compiled')
 
-    parser.add_argument('-o', action='store_true', dest='output_binary', help='Output a binary file')
-    parser.add_argument('-v', action='store_true', dest='output_viewable', help='Output a hybrid view/disassembly file')
-    parser.add_argument('-b', action='store_true', dest='output_blueprint', help='Output a blueprint string')
+    parser.add_argument('--object', action='store_true', dest='output_binary', help='Output a binary file')
+    parser.add_argument('--disassembly', action='store_true', dest='output_viewable', help='Output a hybrid view/disassembly file')
+    parser.add_argument('--factorio-blueprint', action='store_true', dest='output_blueprint', help='Output a blueprint string')
+    parser.add_argument('--factorio-memory-map', action='store_true', dest='output_factorio_memory_map', help='Output a Factorio Memory Mapping file to <file>.fmap')
 
     parser.add_argument('--ea', action='store_true', dest='enable_assertions', default=False, help='Enable assert instructions in the output code')
     parser.add_argument('--ep', action='store_true', dest='enable_print', default=False, help='Enable print instructions in the output code')
@@ -55,6 +57,14 @@ def main(args: argparse.Namespace):
         data = builder.build_rom(asm.code, asm.sprites)
         with open(output_file + '.blueprint', 'w', encoding='utf-8') as f:
             f.write(data)
+
+    if args.output_factorio_memory_map:
+        with open(output_file + '.fmap', 'w', encoding='utf-8') as f:
+            format_string = '%04d | %-' + str(1 + max(len(s) for s in asm.memory_table.values())) + 's | %d, %s\n'
+            for r in Registers:
+                f.write(format_string % (r.value, r.name, r.value // 32, builder.SIGNALS_32BIT[r.value % 32]))
+            for address, name in sorted(asm.memory_table.items()):
+                f.write(format_string % (address, name, address // 32, builder.SIGNALS_32BIT[address % 32]))
 
 
 class Assembler:
