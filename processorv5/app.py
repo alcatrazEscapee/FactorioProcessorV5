@@ -6,7 +6,7 @@ from numpy import int32
 
 from assembler import Assembler
 from processor import Processor, ProcessorError, GPU, Device, ImageBuffer
-from utils import ConnectionManager
+from utils import ConnectionManager, KeyDebouncer
 
 import os
 import time
@@ -35,10 +35,11 @@ class App:
     def __init__(self):
         self.root = Tk()
         self.root.title('ProcessorV5')
+        self.root.protocol("WM_DELETE_WINDOW", self.on_shutdown)
+
         self.root.rowconfigure(0, minsize=320, weight=1)
         self.root.columnconfigure(0, minsize=60, weight=1)
         self.root.columnconfigure(1, minsize=320, weight=1)
-        self.root.protocol("WM_DELETE_WINDOW", self.on_shutdown)
 
         self.buttons = Frame(self.root)
         self.buttons.grid(row=0, column=0, sticky='ns')
@@ -86,10 +87,17 @@ class App:
         self.canvas = Canvas(self.root, bg='white', height=320, width=320)
         self.canvas.grid(row=0, column=1, padx=5, pady=5)
 
-        self.key_mapping = {32: 0, 37: 3, 38: 1, 39: 4, 40: 2}
-        self.keys = [0] * constants.CONTROL_PORT_WIDTH
-        self.root.bind('<KeyPress>', self.on_key_down)
-        self.root.bind('<KeyRelease>', self.on_key_up)
+        self.key_mapping = {
+            'Up': constants.CONTROL_PORT_UP,
+            'Down': constants.CONTROL_PORT_DOWN,
+            'Left': constants.CONTROL_PORT_LEFT,
+            'Right': constants.CONTROL_PORT_RIGHT,
+            'space': constants.CONTROL_PORT_X
+        }
+        self.key_states = {i: False for i in self.key_mapping.values()}
+        self.key_debouncer = KeyDebouncer(self.on_key_event)
+        self.root.bind('<KeyPress>', self.key_debouncer.on_pressed)
+        self.root.bind('<KeyRelease>', self.key_debouncer.on_released)
 
         self.asm: Optional[Assembler] = None
         self.processor_thread: Optional[Process] = None
@@ -140,7 +148,7 @@ class App:
             self.processor_thread.start()
             self.info_text.set('Running')
 
-    def on_perf_text_click(self, event):
+    def on_perf_text_click(self):
         if self.processor_pipe.closed():
             entry = simpledialog.askstring('ProcessorV5', 'Clock Cycle Time')
             if entry.endswith('ns'):
@@ -153,14 +161,9 @@ class App:
                 self.perf_clock_ns = int(entry) * 1_000_000
             self.perf_text.set(format_frequency(1_000_000_000 / self.perf_clock_ns))
 
-    def on_key_down(self, key):
-        if key.keycode in self.key_mapping:
-            k = self.key_mapping[key.keycode]
-            self.keys[k] = 1 - self.keys[k]
-            self.processor_pipe.send(C2P_KEY, k, int32(self.keys[k]))
-
-    def on_key_up(self, key):
-        pass
+    def on_key_event(self, event, pressed: bool):
+        if event.keysym in self.key_mapping:
+            self.processor_pipe.send(C2P_KEY, self.key_mapping[event.keysym], pressed)
 
     def on_halt(self):
         self.close_processor_thread()
@@ -251,7 +254,7 @@ def manage_processor(proc: Processor, period_ns: int, raw: Connection):
         for key, *data in pipe.poll():
             if key == C2P_KEY:
                 key, data = data
-                keyboard.data[key] = data
+                keyboard.data[key - constants.CONTROL_PORT] = int32(data)
             elif key == C2P_HALT:
                 return
 

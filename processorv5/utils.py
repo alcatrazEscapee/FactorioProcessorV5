@@ -1,5 +1,6 @@
 from typing import NamedTuple, Union, Dict, List, Tuple, Callable, Optional, Generator, Any
 from multiprocessing.connection import Connection
+from threading import Timer
 from numpy import int32, uint64
 from constants import GPUImageDecoder
 from PIL import Image
@@ -200,3 +201,29 @@ class ConnectionManager:
                 yield self.pipe.recv()
         except BrokenPipeError:
             self.pipe = None
+
+
+class KeyDebouncer:
+    """ Debounces key events for Tkinter, so press-and-hold works. Modified from https://github.com/adamheins/tk-debouncer """
+
+    def __init__(self, callback: Callable[[Any, bool], None]):
+        self.pressed: bool = False
+        self.release_timer: Timer | None = None
+        self.callback = callback
+
+    def on_pressed(self, event):
+        if self.release_timer:
+            self.release_timer.cancel()
+            self.release_timer = None
+        if not self.pressed:
+            self.pressed = True
+            self.callback(event, True)
+
+    def on_released(self, event):
+        # Set a timer. If it is allowed to expire (not reset by another down event), then we know the key has been released for good.
+        self.release_timer = Timer(0.05, self.on_timer_expire, [event])
+        self.release_timer.start()
+
+    def on_timer_expire(self, event):
+        self.pressed = False
+        self.callback(event, False)
