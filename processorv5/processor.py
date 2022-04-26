@@ -90,7 +90,8 @@ class GPU:
         elif ir.gpu_opcode == GPUInstruction.GCI:
             self.image = self.compose(GPUFunction(ir.gpu_function))
         elif ir.gpu_opcode == GPUInstruction.GMV:
-            self.image = self.translate(self.processor.mem_get_operand(ir.op1), self.processor.mem_get_operand(ir.op3))
+            dx, dy = self.gmv_get(ir.op1, 'x'), self.gmv_get(ir.op3, 'y')
+            self.image = self.translate(dx, dy)
         elif ir.gpu_opcode == GPUInstruction.GMVI:
             self.image = self.translate(ir.op1, ir.op3)
         else:
@@ -106,6 +107,12 @@ class GPU:
             return self.processor.throw(ProcessorErrorType.GPU_UNINITIALIZED_MEMORY, addr)
         return self.processor.throw(ProcessorErrorType.GPU_INVALID_MEMORY_ADDRESS, addr)
 
+    def gmv_get(self, arg: int32, name: str) -> int32:
+        value = self.processor.mem_get_operand(arg)
+        if 0 <= value < 31:
+            return value
+        self.processor.throw(ProcessorErrorType.GPU_MOVE_OUT_OF_BOUNDS, disassembler.decode_address(arg), value, name)
+
     def compose(self, func: GPUFunction) -> ImageBuffer:
         return ImageBuffer.create(lambda x, y: func.apply_str(self.buffer[x, y], self.image[x, y]))
 
@@ -117,6 +124,7 @@ class ProcessorErrorType(Enum):
     GPU_UNINITIALIZED_MEMORY = 'GPU Uninitialized Memory Address=%d'
     GPU_INVALID_MEMORY_ADDRESS = 'GPU Invalid Memory Address=%d'
     GPU_INVALID_OPCODE = 'GPU Invalid Opcode=%d'
+    GPU_MOVE_OUT_OF_BOUNDS = 'GPU Move Out of Bounds Detected, Arg = %s, Value = %s, Param = %s'
     UNINITIALIZED_MEMORY = 'Uninitialized Address=%d'
     INVALID_MEMORY_ADDRESS_ON_READ = 'Invalid Memory Write Address=%d'
     INVALID_MEMORY_ADDRESS_ON_WRITE = 'Invalid Memory Read Address=%d'
