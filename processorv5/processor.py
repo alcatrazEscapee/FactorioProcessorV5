@@ -9,7 +9,7 @@ from numpy import int32, uint64
 import utils
 import numpy
 import constants
-import dissasembler
+import disassembler
 
 numpy.seterr(all='ignore')
 
@@ -221,7 +221,7 @@ class Processor:
     def do_assert(self, ir_data: IRData):
         actual, expected = self.mem_get_operand(ir_data.op3), ir_data.imm26
         if actual != expected:
-            self.throw(ProcessorErrorType.ASSERT_FAILED, dissasembler.decode_address(ir_data.op3), expected, actual)
+            self.throw(ProcessorErrorType.ASSERT_FAILED, disassembler.decode_address(ir_data.op3), expected, actual)
             self.running = False
 
     def do_print(self, ir_data: IRData):
@@ -308,7 +308,7 @@ class Processor:
                 memory_view |= {i - 1, i, i + 1}
 
         # Show a view of the assembly near the area
-        decoded = dissasembler.decode(self.instructions)
+        decoded = disassembler.decode(self.instructions)
         decoded_view = decoded[self.pc - 3:self.pc] + [decoded[self.pc] + ' <-- HERE'] + decoded[self.pc + 1:self.pc + 4]
 
         return '\n'.join([

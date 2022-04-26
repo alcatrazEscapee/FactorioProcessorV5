@@ -1,7 +1,7 @@
 from phases import Scanner, Parser, CodeGen
 
 import utils
-import dissasembler
+import disassembler
 import testfixtures
 
 
@@ -28,7 +28,7 @@ def gen(file: str):
 
     codegen = CodeGen(parser)
     codegen.gen()
-    actual_text = '\n'.join(dissasembler.decode(codegen.output_code)) + '\n'
+    actual_text = '\n'.join(disassembler.decode(codegen.output_code, label_table=parser.label_table())) + '\n'
     utils.write_file(file.replace('.s', '.out'), actual_text)
     expected_text = utils.read_or_create_empty(file.replace('.s', '.trace'))
 

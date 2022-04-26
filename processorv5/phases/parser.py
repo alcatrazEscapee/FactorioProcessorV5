@@ -337,12 +337,16 @@ class Parser:
         self.undefined_labels: Dict[str, ParseError] = {}  # labels that have been referenced by an instruction but not defined yet, and the error referencing their first definition
         self.aliases: Dict[str, int] = {}  # 'alias' statements
         self.sprites: List[str] = []  # sprite literals, for GPU ROM
+        self.memory_table: Dict[int, str] = {}  # Named memory addresses
         self.tex_helper: TextureHelper = TextureHelper(self.root, self.err)
         self.enable_assertions = enable_assertions
         self.enable_print = enable_print
         self.inline_functions: Dict[str, 'InlineFunctionParser'] = {}  # Sub-parsers for inline functions. They consume the tokens declared in the inline procedure, and re-emit them for each usage
 
         self.error: Optional[ParseError] = None
+
+    def label_table(self) -> Dict[int, str]:
+        return {v: k for k, v in self.labels.items()}
 
     def trace(self, file: str, scanner: Scanner):
         with open(file, 'w') as f:
@@ -520,6 +524,11 @@ class Parser:
         value = self.word_count
         self.word_count += size
         self.aliases[word] = value
+        if size > 1:
+            for offset in range(size):
+                self.memory_table[value + offset] = '%s[%d]' % (word, offset)
+        else:
+            self.memory_table[value] = word
 
     def parse_texture(self):
         self.expect(ScanToken.IDENTIFIER, 'Expected identifier after \'texture\' keyword')
@@ -550,6 +559,7 @@ class Parser:
             parser = Parser(scanner.output_tokens, file, self.enable_assertions, self.enable_print)
             parser.output_tokens = self.output_tokens
             parser.word_count = self.word_count
+            parser.memory_table = self.memory_table
             parser.labels = self.labels
             parser.aliases = self.aliases
             parser.sprites = self.sprites
@@ -844,6 +854,7 @@ class InlineFunctionParser(Parser):
         super().__init__(parent.input_tokens, parent.file, parent.enable_assertions, parent.enable_print)
         self.includes = parent.includes
         self.word_count = parent.word_count
+        self.memory_table = parent.memory_table
         self.aliases = parent.aliases
         self.sprites = parent.sprites
         self.inline_functions = parent.inline_functions

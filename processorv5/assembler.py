@@ -1,7 +1,7 @@
 # This is an Assembler from assembly code to binary level instructions for the ProcessorV5 architecture
 # The purpose is to be able to write programs for the final implementation and hardware model levels
 
-from typing import Optional, Tuple, List, Dict, Literal, Any
+from typing import Optional, Tuple, List, Dict
 
 from phases import Scanner, Parser, CodeGen
 
@@ -9,7 +9,7 @@ import sys
 import utils
 import builder
 import argparse
-import dissasembler
+import disassembler
 
 
 def read_command_line_args():
@@ -21,15 +21,15 @@ def read_command_line_args():
     parser.add_argument('-v', action='store_true', dest='output_viewable', help='Output a hybrid view/disassembly file')
     parser.add_argument('-b', action='store_true', dest='output_blueprint', help='Output a blueprint string')
 
-    parser.add_argument('--ea', action='store_true', dest='enable_assertions', help='Enable assert instructions in the output code')
-    parser.add_argument('--ep', action='store_true', dest='enable_assertions', help='Enable print instructions in the output code')
+    parser.add_argument('--ea', action='store_true', dest='enable_assertions', default=False, help='Enable assert instructions in the output code')
+    parser.add_argument('--ep', action='store_true', dest='enable_print', default=False, help='Enable print instructions in the output code')
     parser.add_argument('--out', type=str, help='The output file name')
 
     return parser.parse_args()
 
 def main(args: argparse.Namespace):
     input_text = utils.read_file(args.file)
-    asm = Assembler(args.file, input_text, args.enable_assertions)
+    asm = Assembler(args.file, input_text, args.enable_assertions, args.enable_print)
     if not asm.assemble():
         print(asm.error)
         sys.exit(1)
@@ -42,7 +42,7 @@ def main(args: argparse.Namespace):
                 f.write(c.to_bytes(8, byteorder='big'))
 
     if args.output_viewable:
-        dis = dissasembler.decode(asm.code, asm.print_table)
+        dis = disassembler.decode(asm.code, asm.print_table, asm.memory_table, asm.label_table)
         with open(output_file + '.v', 'w', encoding='utf-8') as f:
             for c, line in zip(asm.code, dis):
                 f.write('%s %s | %s\n' % (
@@ -65,10 +65,12 @@ class Assembler:
         self.enable_assertions = enable_assertions
         self.enable_print = enable_print
 
-        self.code: Optional[List[int]] = None
-        self.sprites: Optional[List[str]] = None
-        self.directives: Optional[Dict[str, str]] = None
-        self.print_table: Optional[List[Tuple[str, Tuple[int, ...]]]] = None
+        self.code: List[int] = []
+        self.sprites: List[str] = []
+        self.directives: Dict[str, str] = {}
+        self.print_table: List[Tuple[str, Tuple[int, ...]]] = []
+        self.memory_table: Dict[int, str] = {}
+        self.label_table: Dict[int, str] = {}
         self.error: Optional[str] = None
 
     def assemble(self) -> bool:
@@ -90,6 +92,8 @@ class Assembler:
         self.sprites = codegen.sprites
         self.directives = scanner.directives
         self.print_table = codegen.print_table
+        self.memory_table = parser.memory_table
+        self.label_table = parser.label_table()
         return True
 
 
