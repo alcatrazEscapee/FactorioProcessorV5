@@ -85,6 +85,7 @@ class ParseToken(IntEnum):
 
     EOF = enum.auto()
     ASSERT = enum.auto()
+    PRINT = enum.auto()
     ERROR = enum.auto()
 
     def equals(self, other: Any) -> bool:
@@ -306,7 +307,7 @@ class Parser:
     }.items()}
 
     INSTRUCTION_TYPES = {
-        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E, ParseToken.TYPE_F, ParseToken.ASSERT
+        ParseToken.TYPE_A, ParseToken.TYPE_B, ParseToken.TYPE_C, ParseToken.TYPE_D, ParseToken.TYPE_E, ParseToken.TYPE_F, ParseToken.ASSERT, ParseToken.PRINT
     }
 
     Token = Union[ParseToken, ParseError, GPUInstruction, GPUFunction, int, str]
@@ -321,7 +322,7 @@ class Parser:
 
     R0 = ParseToken.ADDRESS_CONSTANT, 0
 
-    def __init__(self, tokens: List['Scanner.Token'], file: str = None, enable_assertions: bool = False):
+    def __init__(self, tokens: List['Scanner.Token'], file: str = None, enable_assertions: bool = False, enable_print: bool = False):
         self.input_tokens: List['Scanner.Token'] = tokens
         self.output_tokens: List['Parser.Token'] = []
         self.pointer: int = 0
@@ -338,6 +339,7 @@ class Parser:
         self.sprites: List[str] = []  # sprite literals, for GPU ROM
         self.tex_helper: TextureHelper = TextureHelper(self.root, self.err)
         self.enable_assertions = enable_assertions
+        self.enable_print = enable_print
         self.inline_functions: Dict[str, 'InlineFunctionParser'] = {}  # Sub-parsers for inline functions. They consume the tokens declared in the inline procedure, and re-emit them for each usage
 
         self.error: Optional[ParseError] = None
@@ -393,34 +395,37 @@ class Parser:
 
     def parse_any(self) -> bool:
         t = self.next()
-        if t == ScanToken.IDENTIFIER:
+        if ScanToken.IDENTIFIER.equals(t):
             self.pointer += 1
             self.parse_label()
-        elif t == ScanToken.INLINE:
+        elif ScanToken.INLINE.equals(t):
             self.pointer += 1
             self.parse_inline_label()
-        elif t == ScanToken.INSTRUCTION:
+        elif ScanToken.INSTRUCTION.equals(t):
             self.pointer += 1
             self.parse_instruction()
-        elif t == ScanToken.ALIAS:
+        elif ScanToken.ALIAS.equals(t):
             self.pointer += 1
             self.parse_alias()
-        elif t == ScanToken.WORD:
+        elif ScanToken.WORD.equals(t):
             self.pointer += 1
             self.parse_word()
-        elif t == ScanToken.SPRITE:
+        elif ScanToken.SPRITE.equals(t):
             self.pointer += 1
             self.parse_sprite()
-        elif t == ScanToken.TEXTURE:
+        elif ScanToken.TEXTURE.equals(t):
             self.pointer += 1
             self.parse_texture()
-        elif t == ScanToken.INCLUDE:
+        elif ScanToken.INCLUDE.equals(t):
             self.pointer += 1
             self.parse_include()
-        elif t == ScanToken.ASSERT:
+        elif ScanToken.ASSERT.equals(t):
             self.pointer += 1
             self.parse_assert()
-        elif t == ScanToken.EOF:
+        elif ScanToken.PRINT.equals(t):
+            self.pointer += 1
+            self.parse_print()
+        elif ScanToken.EOF.equals(t):
             return True
         else:
             self.err('Unknown token: \'%s\'' % str(t))
@@ -542,7 +547,7 @@ class Parser:
                 return self.err('%s\nIn file \'%s\', referenced from \'include "%s"\'' % (scanner.error, file, ref))
 
             # Link sub-parser's output to this parser
-            parser = Parser(scanner.output_tokens, file, self.enable_assertions)
+            parser = Parser(scanner.output_tokens, file, self.enable_assertions, self.enable_print)
             parser.output_tokens = self.output_tokens
             parser.word_count = self.word_count
             parser.labels = self.labels
@@ -620,6 +625,41 @@ class Parser:
         if self.enable_assertions:
             # Output assert instructions to the next stage
             self.push(ParseToken.ASSERT, *p1, ParseToken.IMMEDIATE_26, value)
+
+    def parse_print(self):
+        self.expect(ScanToken.LBRACKET, 'Expected \'[\' after \'print\' keyword')
+        t = self.next()
+        if ScanToken.STRING.equals(t):
+            # Custom format string
+            self.pointer += 1
+            format_string = self.next()
+            self.pointer += 1
+        else:
+            format_string = None
+
+        # Parse as many address identifiers until we reach an ']'
+        addresses = []
+        t = self.next()
+        while not ScanToken.RBRACKET.equals(t):
+            addresses.append(self.parse_address())
+            t = self.next()
+
+        if format_string is None:
+            # Manually set format string
+            format_string = ' '.join(['%d' for _ in addresses])
+        else:
+            # Validate format string for arguments
+            try:
+                format_string % tuple(range(len(addresses)))
+            except TypeError as e:
+                self.err('Invalid format string, %s' % e)
+            except ValueError as e:
+                self.err('Invalid format string, %s' % e)
+
+        self.pointer += 1
+        self.push(ParseToken.PRINT, format_string, len(addresses))
+        for address in addresses:
+            self.push(*address)
 
     def parse_instruction(self):
         opcode = self.next()
@@ -801,7 +841,7 @@ class InlineFunctionParserExit(Exception):
 class InlineFunctionParser(Parser):
 
     def __init__(self, parent: Parser):
-        super().__init__(parent.input_tokens, parent.file, parent.enable_assertions)
+        super().__init__(parent.input_tokens, parent.file, parent.enable_assertions, parent.enable_print)
         self.includes = parent.includes
         self.word_count = parent.word_count
         self.aliases = parent.aliases

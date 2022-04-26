@@ -4,3 +4,5 @@ sprite
 include
 texture
 inline
+assert
+print

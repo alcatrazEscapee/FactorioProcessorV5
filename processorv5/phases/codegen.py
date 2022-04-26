@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from constants import Opcodes, GPUInstruction, GPUFunction, GPUImageDecoder
 from phases.parser import Parser, ParseToken
 
@@ -11,6 +11,7 @@ class CodeGen:
         self.input_tokens = parser.output_tokens
         self.labels = parser.labels
         self.output_code: List[int] = []
+        self.print_table: List[Tuple[str, Tuple[int, ...]]] = []
         self.sprites: List[str] = parser.sprites
         self.pointer = 0
 
@@ -38,6 +39,9 @@ class CodeGen:
             elif t == ParseToken.ASSERT:
                 self.pointer += 1
                 self.gen_assert()
+            elif t == ParseToken.PRINT:
+                self.pointer += 1
+                self.gen_print()
             else:
                 break
         if not self.next() == ParseToken.EOF:
@@ -114,6 +118,13 @@ class CodeGen:
     def gen_assert(self):
         p1, imm = self.gen_address(), self.gen_immediate26()
         self.output_code.append((Opcodes.ASSERT.value << 58) | (imm << 32) | (p1 << 0))
+
+    def gen_print(self):
+        format_string, nargs = self.take(), self.take()
+        arguments = tuple(self.gen_address() for _ in range(nargs))
+        print_id = len(self.print_table)
+        self.output_code.append((Opcodes.PRINT.value << 58) | print_id)
+        self.print_table.append((format_string, arguments))
 
     def gen_opcode(self) -> int:
         value: ParseToken = self.take()

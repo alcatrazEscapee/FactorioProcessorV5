@@ -1,11 +1,11 @@
-from typing import Optional
+from typing import Optional, Any
 from tkinter import Tk, Frame, Button, Label, Canvas, Toplevel, StringVar, simpledialog, filedialog
 from multiprocessing import Process, Pipe
 from multiprocessing.connection import Connection
 from numpy import int32
 
 from assembler import Assembler
-from processor import Processor, ProcessorError, GPU, Device, ImageBuffer
+from processor import Processor, ProcessorError, ProcessorEvent, GPU, Device, ImageBuffer
 from utils import ConnectionManager, KeyDebouncer
 
 import os
@@ -21,6 +21,7 @@ DIRECTIVE_SIM_CLOCK_TIME = 'sim_clock_time'
 
 P2C_SCREEN = 'screen'
 P2C_STATS = 'stats'
+P2C_PRINT = 'print'
 P2C_HALT = 'halt'
 
 C2P_KEY = 'key'
@@ -118,6 +119,9 @@ class App:
                 self.mem_text.set(mem)
                 self.inst_mem_text.set(inst_mem)
                 self.gpu_mem_text.set(gpu_mem)
+            elif key == P2C_PRINT:
+                arg, *_ = data
+                print(arg)
             elif key == P2C_HALT:
                 self.on_halt()
 
@@ -140,7 +144,7 @@ class App:
     def on_run(self):
         if self.asm is not None:
             self.update_screen(ImageBuffer.empty())
-            proc = Processor(self.asm.code, self.asm.sprites)
+            proc = Processor(self.asm.code, self.asm.sprites, self.asm.print_table)
             parent, child = Pipe()
 
             self.processor_pipe.reopen(parent)
@@ -181,7 +185,7 @@ class App:
         except OSError:
             return self.show_error_modal('Error loading from file: %s' % path)
 
-        asm = Assembler(path, text, enable_assertions=True)
+        asm = Assembler(path, text, enable_assertions=True, enable_print=True)
         if not asm.assemble():
             return self.show_error_modal(asm.error)
 
@@ -235,6 +239,8 @@ def manage_processor(proc: Processor, period_ns: int, raw: Connection):
     proc.gpu = AppGPU(proc, pipe)
     keyboard = AppControlDevice()
     proc.devices.append(keyboard)
+    proc.event_handle = AppEventHandle(pipe)
+
     last_ns = tick_ns = time.perf_counter_ns()
     next_ns = last_ns + 1_000_000_000  # report actual frequency every 1s
     ticks = 0
@@ -293,6 +299,16 @@ class AppControlDevice(Device):
 
     def reads(self, addr: int32) -> bool: return 0 <= addr - constants.CONTROL_PORT < constants.CONTROL_PORT_WIDTH
     def get(self, addr: int32) -> int32: return self.data[addr - constants.CONTROL_PORT]
+
+
+class AppEventHandle:
+
+    def __init__(self, pipe: ConnectionManager):
+        self.pipe = pipe
+
+    def __call__(self, proc: Processor, event_type: ProcessorEvent, arg: Any):
+        if event_type == ProcessorEvent.PRINT:
+            self.pipe.send(P2C_PRINT, arg)
 
 
 if __name__ == '__main__':

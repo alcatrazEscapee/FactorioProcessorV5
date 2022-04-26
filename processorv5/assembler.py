@@ -22,6 +22,7 @@ def read_command_line_args():
     parser.add_argument('-b', action='store_true', dest='output_blueprint', help='Output a blueprint string')
 
     parser.add_argument('--ea', action='store_true', dest='enable_assertions', help='Enable assert instructions in the output code')
+    parser.add_argument('--ep', action='store_true', dest='enable_assertions', help='Enable print instructions in the output code')
     parser.add_argument('--out', type=str, help='The output file name')
 
     return parser.parse_args()
@@ -41,7 +42,7 @@ def main(args: argparse.Namespace):
                 f.write(c.to_bytes(8, byteorder='big'))
 
     if args.output_viewable:
-        dis = dissasembler.decode(asm.code)
+        dis = dissasembler.decode(asm.code, asm.print_table)
         with open(output_file + '.v', 'w', encoding='utf-8') as f:
             for c, line in zip(asm.code, dis):
                 f.write('%s %s | %s\n' % (
@@ -58,14 +59,16 @@ def main(args: argparse.Namespace):
 
 class Assembler:
 
-    def __init__(self, file_name: str, input_text: str, enable_assertions: bool):
+    def __init__(self, file_name: str, input_text: str, enable_assertions: bool = False, enable_print: bool = False):
         self.file_name = file_name
         self.input_text = input_text
         self.enable_assertions = enable_assertions
+        self.enable_print = enable_print
 
         self.code: Optional[List[int]] = None
         self.sprites: Optional[List[str]] = None
         self.directives: Optional[Dict[str, str]] = None
+        self.print_table: Optional[List[Tuple[str, Tuple[int, ...]]]] = None
         self.error: Optional[str] = None
 
     def assemble(self) -> bool:
@@ -74,7 +77,7 @@ class Assembler:
             self.error = 'Scanner error:\n%s' % scanner.error
             return False
 
-        parser = Parser(scanner.output_tokens, self.file_name, self.enable_assertions)
+        parser = Parser(scanner.output_tokens, self.file_name, self.enable_assertions, self.enable_print)
         if not parser.parse():
             parser.error.trace(scanner)
             self.error = 'Parser error:\n%s' % parser.error
@@ -86,6 +89,7 @@ class Assembler:
         self.code = codegen.output_code
         self.sprites = codegen.sprites
         self.directives = scanner.directives
+        self.print_table = codegen.print_table
         return True
 
 

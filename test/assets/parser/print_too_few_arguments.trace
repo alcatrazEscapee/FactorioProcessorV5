@@ -1,0 +1,3 @@
+ERROR Invalid format string, not enough arguments for format string on line 1:
+print [ "r1 = %d, r2 = %d, r3 = %d" r1 r2 ]
+------------------------------------------^

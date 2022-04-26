@@ -195,6 +195,7 @@ class Opcodes(IntEnum):
     HALT = 51
     ASSERT = 52
     GPU = 53
+    PRINT = 54
 
 
 class Registers(IntEnum):

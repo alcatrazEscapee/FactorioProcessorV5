@@ -26,6 +26,9 @@ class IRData(NamedTuple):
     gpu_opcode: int32
     gpu_function: int32
 
+    # Print Fields
+    print_index: int32
+
 
 class OperandData(NamedTuple):
     addr: int32
@@ -120,6 +123,7 @@ class ProcessorErrorType(Enum):
     INVALID_OPCODE = 'Invalid Opcode=%d'
     UNINITIALIZED_INSTRUCTION = 'Uninitialized Instruction at PC=%d'
     INVALID_INSTRUCTION_ADDRESS = 'Invalid Instruction Address at PC=%d'
+    INVALID_PRINT_TABLE_ENTRY = 'Invalid Print Table Entry %d, out of bounds [0, %d)'
     ASSERT_FAILED = 'Assertion Failed at assert %s = %d (got %d)'
 
     def create(self, *args: Any):
@@ -134,11 +138,20 @@ class ProcessorError(Exception):
     def __str__(self):
         return self.reason.name.replace('_', ' ').title() + ': ' + self.message
 
+
+class ProcessorEvent(Enum):
+    PRINT = 'print'
+
+    def post(self, proc: 'Processor', arg: Any):
+        proc.event_handle(proc, self, arg)
+
+
 def default_exception_handle(_, e: ProcessorError): raise e
+def default_event_handle(*_): pass
 
 class Processor:
 
-    def __init__(self, instructions: Sequence[AnyInt] = (), sprites: Sequence[str] = (), exception_handle: Callable[['Processor', ProcessorError], Any] = default_exception_handle):
+    def __init__(self, instructions: Sequence[AnyInt] = (), sprites: Sequence[str] = (), print_table: Sequence[Tuple[str, Tuple[int, ...]]] = (), exception_handle: Callable[['Processor', ProcessorError], Any] = default_exception_handle, event_handle: Callable[['Processor', ProcessorEvent, Any], Any] = default_event_handle):
         self.memory: List[Optional[int32]] = [None] * constants.MAIN_MEMORY_SIZE  # N x 32b
         self.memory[0] = int32(0)  # R0
         self.instructions: List[Optional[uint64]] = [None] * constants.INSTRUCTION_MEMORY_SIZE  # N x 64b
@@ -149,7 +162,9 @@ class Processor:
         for i, sprite in enumerate(sprites):
             self.sprites[i] = ImageBuffer.unpack(sprite)
 
+        self.print_table: Sequence[Tuple[str, Tuple[int, ...]]] = print_table
         self.exception_handle = exception_handle
+        self.event_handle = event_handle
 
         self.running = False
         self.pc = int32(0)
@@ -208,6 +223,14 @@ class Processor:
         if actual != expected:
             self.throw(ProcessorErrorType.ASSERT_FAILED, dissasembler.decode_address(ir_data.op3), expected, actual)
             self.running = False
+
+    def do_print(self, ir_data: IRData):
+        if 0 <= ir_data.print_index < len(self.print_table):
+            format_string, ops = self.print_table[ir_data.print_index]
+            values = tuple(self.mem_get_operand(op) for op in ops)
+            ProcessorEvent.PRINT.post(self, format_string % values)
+        else:
+            self.throw(ProcessorErrorType.INVALID_PRINT_TABLE_ENTRY, ir_data.imm26, len(self.print_table))
 
     def mem_get_operand(self, operand: int32) -> int32:
         """
@@ -309,7 +332,8 @@ def decode_ir(ir: uint64) -> IRData:
         int32(utils.bitfield_uint64(ir, 0, 16)),
         utils.signed_bitfield_64_to_32(ir, 16, 16),
         int32(utils.bitfield_uint64(ir, 55, 3)),
-        int32(utils.bitfield_uint64(ir, 51, 4))
+        int32(utils.bitfield_uint64(ir, 51, 4)),
+        int32(utils.bitfield_uint64(ir, 0, 32))
     )
 
 
@@ -438,5 +462,6 @@ INSTRUCTIONS: Dict[int32, Instruction] = validate(
     SpecialInstruction(Opcodes.RET, lambda model, _: model.ret()),
     SpecialInstruction(Opcodes.HALT, lambda model, _: model.halt()),
     SpecialInstruction(Opcodes.ASSERT, lambda model, ir: model.do_assert(ir)),
-    SpecialInstruction(Opcodes.GPU, lambda model, ir: model.gpu.exec(ir))
+    SpecialInstruction(Opcodes.GPU, lambda model, ir: model.gpu.exec(ir)),
+    SpecialInstruction(Opcodes.PRINT, lambda model, ir: model.do_print(ir))
 )

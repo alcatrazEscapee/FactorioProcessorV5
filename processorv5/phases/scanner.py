@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Tuple, List, Set, Optional, Union, Dict
+from typing import Tuple, List, Set, Optional, Union, Dict, Any
 from utils import Interval
 from constants import Instructions, Registers
 
@@ -13,6 +13,7 @@ class ScanToken(IntEnum):
     REGISTER = enum.auto()
     ALIAS = enum.auto()
     ASSERT = enum.auto()
+    PRINT = enum.auto()
     WORD = enum.auto()
     SPRITE = enum.auto()
     INCLUDE = enum.auto()
@@ -38,6 +39,9 @@ class ScanToken(IntEnum):
     # Misc
     EOF = enum.auto()
     ERROR = enum.auto()
+
+    def equals(self, other: Any) -> bool:
+        return type(other) == ScanToken and self == other
 
 
 class ScanError(Exception):
@@ -69,6 +73,7 @@ class Scanner:
     KEYWORDS = {
         'alias': ScanToken.ALIAS,
         'assert': ScanToken.ASSERT,
+        'print': ScanToken.PRINT,
         'word': ScanToken.WORD,
         'sprite': ScanToken.SPRITE,
         'include': ScanToken.INCLUDE,

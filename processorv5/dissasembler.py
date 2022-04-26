@@ -1,11 +1,11 @@
-from constants import Instructions, Opcodes, GPUInstruction, GPUFunction, GPUImageDecoder
+from constants import Instructions, Opcodes, Registers, GPUInstruction, GPUFunction, GPUImageDecoder
 from numpy import int32, uint64
-from typing import List
+from typing import List, Sequence, Tuple
 
 import processor
 
 
-def decode(code: List[int]) -> List[str]:
+def decode(code: List[int], print_table: Sequence[Tuple[str, Tuple[int, ...]]] | None = None) -> List[str]:
     decoded = []
     for i, c in enumerate(code):
         if c is None:
@@ -35,6 +35,12 @@ def decode(code: List[int]) -> List[str]:
             inst += ' ' + decode_offset(i, fields.branch)
         elif op == Opcodes.ASSERT:
             inst += ' ' + decode_address(fields.op3) + ' = ' + str(fields.imm26)
+        elif op == Opcodes.PRINT:
+            inst += ' print ['
+            if print_table is not None:
+                format_string, ops = print_table[fields.print_index]
+                inst += ' "' + format_string + '" ' + ' '.join([decode_address(op) for op in ops])
+            inst += ' ]'
         elif op == Opcodes.GPU:
             gpu = GPUInstruction(fields.gpu_opcode)
             inst = '%04d | %s' % (i, Instructions[gpu.name].value)
@@ -59,11 +65,19 @@ def decode(code: List[int]) -> List[str]:
 
 def decode_address(value: int32) -> str:
     op = processor.decode_operand(value)
-    return '@%s%d%s' % (
-        '@' if op.indirect == 1 else '',
-        op.addr,
-        '.%d' % op.offset if op.offset != 0 else ''
-    )
+    indirect = '@' if op.indirect == 1 else ''
+    offset = '.%d' % op.offset if op.offset != 0 else ''
+    if 0 <= op.addr <= Registers.R16:  # Infer register argument
+        address = 'r%d' % op.addr
+    elif op.addr == Registers.SP:
+        address = 'sp'
+    elif op.addr == Registers.RA:
+        address = 'ra'
+    elif op.addr == Registers.RV:
+        address = 'rv'
+    else:
+        address = '@%d' % op.addr
+    return indirect + address + offset
 
 def decode_offset(code: int, offset: int) -> str:
     return '[+%s -> %s]' % (offset, code + offset)
