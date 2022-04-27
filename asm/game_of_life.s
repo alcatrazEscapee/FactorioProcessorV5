@@ -1,140 +1,164 @@
-# Stats compared to game_of_life_no_inlining.s
-# Total Instructions: 85 -> 99 (+16%, Overall 1.29% Utilization)
-# Average Instructions Executed / Loop: 69,024 -> 52,764 (+23% Speedup)
+# SIMD, Incredibly Over-Engineered Game of Life Implementation
+# Comparison with game_of_life.s:
+#[sim_clock_time=500us]
 
-alias WIDTH 32
-alias SIZE 1024
+alias RNG_PORT 4000
 
 word RNG
-word [32] state, next_state
 
-alias pointer 7
-alias next_pointer 8
+# Add buffer empty words on either side of 'state', so that reads from out of bounds rows always return zero
+word zero1
+word [32] state
+word zero2
+word [32] next_state
+
+# Neighbors a0.. a7, Center ac
+# a0 a1 a2
+# a3 ac a4
+# a5 a6 a7
+
+word ac
+word a0, a1, a2, a3, a4, a5, a6, a7
+
+word [6] s0  # Intermediate stages
+word [7] c0
+word [5] s1
+word [6] c1
+
+word p1, p2, p4  # Final counts
+
+word q  # Final state
+
+word i  # Loop index
+word pointer, next_pointer
+
+
+inline draw_row:
+    glsd @@pointer G_32x1
+    gmv r0 @i
+    gcb G_DRAW_ALPHA
+    ret
 
 main:
-    seti @RNG 4000
+    seti @RNG RNG_PORT
+    seti @zero1 0
+    seti @zero2 0
+
     gcb G_CLEAR
 seed_initial:
     # Load a random initial set of words
     seti @pointer state
-    seti @next_pointer next_state
-    seti r1 0
-seed_initial_loop:
+    seti @i 0
+initial_loop:
     # Generate state
     set @@pointer @@RNG
     and @@pointer @@pointer @@RNG  # 1/4 chance of a cell starting on
 
-    # Draw state
-    glsd @@pointer G_32x1
-    gmv r0 r1
-    gcb G_DRAW_ALPHA
-
-    # Reset next state
-    seti @@next_pointer 0
+    call draw_row
 
     # Increment
     addi @pointer @pointer 1
-    addi @next_pointer @next_pointer 1
-    addi r1 r1 1
-    blti r1 WIDTH seed_initial_loop
+    addi @i @i 1
+    blti @i 32 initial_loop
     gflush
+
 
 main_loop:
-    seti r3 1  # x
-x_loop:
-    seti r4 1  # y
-y_loop:
+    seti @i 0
 
-    # count neighbors
-    addi r1 r3 -1  # x param
-    addi r2 r4 -1  # y param
-    seti r5 0  # count
+row_loop:
+    # Initialize neighbor vectors
+    addi @pointer @i state
 
-inline count_at_no_add:
-    # r1 = x, r2 = y
-    # Checking a bit: bit = (number >> n) & 1U;
-    addi r10 r2 state
-    rs rv @r10 r1
-    andi rv rv 1
-    ret
+    set @ac @@pointer
+    lsi @a3 @ac 1
+    rsi @a4 @ac 1
 
-inline count_at:
-    call count_at_no_add
-    add r5 r5 rv
-    ret
+    set @a1 @@pointer.-1
+    lsi @a0 @a1 1
+    rsi @a2 @a1 1
 
-    call count_at  # X.. / ... / ...
-    addi r1 r1 1
-    call count_at  # .X. / ... / ...
-    addi r1 r1 1
-    call count_at  # ..X / ... / ...
-    addi r2 r2 1
-    call count_at  # ... / ..X / ...
-    addi r2 r2 1
-    call count_at  # ... / ... / ..X
-    addi r1 r1 -1
-    call count_at  # ... / ... / .X.
-    addi r1 r1 -1
-    call count_at  # ... / ... / X..
-    addi r2 r2 -1
-    call count_at  # ... / X.. / ...
+    set @a6 @@pointer.1
+    lsi @a5 @a6 1
+    rsi @a7 @a6 1
 
-    # check if this cell lives or dies
-    # live cell with 2 or 3 -> live cell
-    # dead cell with 3 -> live cell
-    # any other -> dead cell
-    addi r1 r1 1  # move to center
-    call count_at_no_add  # ... / .X. / ...
+    # Half-Adder Tree
+    xor @s0[0] @a1 @a0  # L1
+    and @c0[0] @a1 @a0
 
-    beqi r5 3 cell_lives
-    eqi r10 r5 2
-    and r10 r10 rv
-    beqi r10 1 cell_lives
-cell_dies:
-    call set_next_dead
-    br after_set_cell
-cell_lives:
-    call set_next_live
+    xor @s0[1] @a2 @s0[0]  # L2
+    and @c0[1] @a2 @s0[0]
 
-after_set_cell:
-    addi r4 r4 1  # y++
-    blti r4 31 y_loop  # y < 31
+    xor @s0[2] @a3 @s0[1]  # L3
+    and @c0[2] @a3 @s0[1]
 
-    addi r3 r3 1  # x++
-    blti r3 31 x_loop  # x < 31
+    xor @s0[3] @a4 @s0[2]  # L4
+    and @c0[3] @a4 @s0[2]
 
-    # Copy next state to state, and refresh gpu
+    xor @s0[4] @a5 @s0[3]  # L5
+    and @c0[4] @a5 @s0[3]
+
+    xor @s0[5] @a6 @s0[4]  # L6
+    and @c0[5] @a6 @s0[4]
+
+    xor @p1    @a7 @s0[5]  # L7
+    and @c0[6] @a7 @s0[5]
+
+    xor @s1[0] @c0[1] @c0[0]  # R3
+    and @c1[0] @c0[1] @c0[0]
+
+    xor @s1[1] @c0[2] @s1[0]  # R4
+    and @c1[1] @c0[2] @s1[0]
+
+    xor @s1[2] @c0[3] @s1[1]  # R5
+    and @c1[2] @c0[3] @s1[1]
+
+    xor @s1[3] @c0[4] @s1[2]  # R6
+    and @c1[3] @c0[4] @s1[2]
+
+    xor @s1[4] @c0[5] @s1[3]  # R7
+    and @c1[4] @c0[5] @s1[3]
+
+    xor @p2    @c0[6] @s1[4]  # R8
+    and @c1[5] @c0[6] @s1[4]
+
+    # Wide OR
+    or @p4 @c1[1] @c1[0]
+    or @p4 @c1[2] @p4
+    or @p4 @c1[3] @p4
+    or @p4 @c1[4] @p4
+    or @p4 @c1[5] @p4
+
+    # Game of Life
+    # ~p4 * p2 * ( p1 + ac )
+    or @q @p1 @ac
+    and @q @q @p2
+    not @p4 @p4
+    and @q @q @p4
+
+    # Save to next_state
+    addi @next_pointer @i next_state
+    set @@next_pointer @q
+
+    # Loop Increment
+    addi @i @i 1
+    blti @i 32 row_loop
+
+    # Copy next_state -> state, and update the screen
     gcb G_CLEAR
-    seti r1 0
-    seti @pointer state
-    seti @next_pointer next_state
+
+    seti @i 0
 copy_loop:
+
+    # Copy
+    addi @pointer @i state
+    addi @next_pointer @i next_state
     set @@pointer @@next_pointer
-    glsd @@pointer G_32x1
-    gmv r0 r1
-    gcb G_DRAW_ALPHA
-    addi @pointer @pointer 1
-    addi @next_pointer @next_pointer 1
-    addi r1 r1 1
-    blti r1 WIDTH copy_loop
+
+    call draw_row
+
+    addi @i @i 1
+    blti @i 32 copy_loop
+
     gflush
-
     br main_loop
-    halt
-
-set_next_live:
-    # r1 = x, r2 = y
-    # Set bit: number |= 1UL << n;
-    lsi r10 1 r1
-    addi r11 r2 next_state
-    or @r11 @r11 r10
-    ret
-
-set_next_dead:
-    # r1 = x, r2 = y
-    # Clear bit: number &= ~(1UL << n);
-    lsi r10 1 r1
-    nori r10 r10 0
-    addi r11 r2 next_state
-    and @r11 @r11 r10
-    ret
