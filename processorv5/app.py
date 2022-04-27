@@ -85,6 +85,11 @@ class App:
         self.gpu_mem_label = Label(self.buttons, textvariable=self.gpu_mem_text)
         self.gpu_mem_label.grid(row=8, column=0, sticky='ew', padx=5, pady=0)
 
+        self.cpi_text = StringVar()
+        self.cpi_text.set('')
+        self.cpi_label = Label(self.buttons, textvariable=self.cpi_text)
+        self.cpi_label.grid(row=8, column=0, sticky='ew', padx=5, pady=0)
+
         self.canvas = Canvas(self.root, bg='white', height=320, width=320)
         self.canvas.grid(row=0, column=1, padx=5, pady=5)
 
@@ -114,11 +119,12 @@ class App:
                 buffer, *_ = data
                 self.update_screen(buffer)
             elif key == P2C_STATS:
-                freq, mem, inst_mem, gpu_mem, *_ = data
+                freq, mem, inst_mem, gpu_mem, cpi, *_ = data
                 self.perf_text.set(format_frequency(freq))
                 self.mem_text.set(mem)
                 self.inst_mem_text.set(inst_mem)
                 self.gpu_mem_text.set(gpu_mem)
+                self.cpi_text.set('%.2f CPI' % cpi)
             elif key == P2C_PRINT:
                 arg, *_ = data
                 print(arg)
@@ -271,7 +277,8 @@ def manage_processor(proc: Processor, period_ns: int, raw: Connection):
             _, mem = proc.memory_utilization()
             _, inst_mem = proc.instruction_memory_utilization()
             _, gpu_mem = proc.gpu_memory_utilization()
-            pipe.send(P2C_STATS, ticks, mem, inst_mem, gpu_mem)
+            cpi = proc.counter.tick_count / proc.cpi_instruction_count
+            pipe.send(P2C_STATS, ticks, mem, inst_mem, gpu_mem, cpi)
             last_ns = time.perf_counter_ns()
             next_ns = last_ns + 1_000_000_000
             ticks = 0

@@ -109,7 +109,7 @@ class GPU:
 
     def gmv_get(self, arg: int32, name: str) -> int32:
         value = self.processor.mem_get_operand(arg)
-        if 0 <= value < 31:
+        if 0 <= value <= 31:
             return value
         self.processor.throw(ProcessorErrorType.GPU_MOVE_OUT_OF_BOUNDS, disassembler.decode_address(arg), value, name)
 
@@ -186,6 +186,15 @@ class Processor:
 
         self.gpu = GPU(self)
 
+        # Heuristics for calculating CPI
+        # This is not a count of instructions executed, but a count of instruction 'units' executed
+        # The motivation for this stat is based on the MIPS ISA
+        # What counts as an instruction unit:
+        # - Any instruction execution
+        # - Usage of an immediate value (MIPS has some, but not as many immediate supporting instructions)
+        # - Indirect memory read or write
+        self.cpi_instruction_count: int = 0
+
     def throw(self, e: ProcessorErrorType, *args: Any) -> Any:
         self.exception_handle(self, e.create(*args))
 
@@ -212,6 +221,9 @@ class Processor:
         # Device Tick
         for device in self.devices:
             device.tick()
+
+        # CPI Tick
+        self.cpi_instruction_count += 1
 
     def branch_to(self, offset: int32):
         self.pc_next = self.pc + offset
@@ -248,6 +260,7 @@ class Processor:
         op = decode_operand(operand)
         value = self.mem_get(op.addr)
         if op.indirect == int32(1):
+            self.cpi_instruction_count += 1  # Indirect memory access
             return self.mem_get(value + op.offset)
         else:
             return value
@@ -276,6 +289,7 @@ class Processor:
         if op.indirect:
             indirect = self.mem_get(op.addr)
             self.mem_set(indirect + op.offset, value)
+            self.cpi_instruction_count += 1  # Indirect memory write
         else:
             self.mem_set(op.addr, value)
 
@@ -381,6 +395,7 @@ class ArithmeticImmediateInstruction(Instruction):
         self.action = action
 
     def exec(self, model: Processor, ir: IRData):
+        model.cpi_instruction_count += 1  # +1 CPI for immediate usage
         model.mem_set_operand(ir.op2, self.action(model.mem_get_operand(ir.op3), ir.imm26))
 
 class BranchInstruction(Instruction):
@@ -398,6 +413,7 @@ class BranchImmediateInstruction(Instruction):
         self.comparator = comparator
 
     def exec(self, model: Processor, ir: IRData):
+        model.cpi_instruction_count += 1  # +1 CPI for immediate usage
         if self.comparator(model.mem_get_operand(ir.op3), ir.imm26):
             model.branch_to(ir.branch)
 
