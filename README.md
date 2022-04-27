@@ -2,7 +2,7 @@
 
 A completely custom, target designed CPU architecture for Factorio.
 
-![Splash](./demo/processor_v5_architecture.png)
+![Splash](./img/processor_v5_architecture.png)
 
 ### Design Goals
 
@@ -269,6 +269,8 @@ Consider the following initial setup:
 | `1111`   | (Global) Full       | `G_FULL`                | `########` |
 
 ## Implementation
+
+![Annotated Splash](./img/processor_v5_architecture_annotated.png)
 
 This section describes implementation details of the V5 architecture in Factorio.
 
