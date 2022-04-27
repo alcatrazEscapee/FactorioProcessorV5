@@ -4,6 +4,7 @@
 !/requirements.txt
 !/README.md
 !/npp_assembly_language_spec.xml
+!/demo/**/*.png
 
 !/asm/textures/**/*.png
 !/asm/**/*.s
