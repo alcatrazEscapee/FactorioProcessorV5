@@ -78,7 +78,7 @@ class GPU:
     def exec(self, ir: IRData):
         if ir.gpu_opcode == GPUInstruction.GFLUSH:
             self.screen = self.buffer
-            self.flush()
+            ProcessorEvent.GFLUSH.post(self.processor, self.screen)
         elif ir.gpu_opcode == GPUInstruction.GLSI:
             self.image = self.gpu_mem_get(ir.op1)
         elif ir.gpu_opcode == GPUInstruction.GLS:
@@ -96,9 +96,6 @@ class GPU:
             self.image = self.translate(ir.op1, ir.op3)
         else:
             self.processor.throw(ProcessorErrorType.GPU_INVALID_OPCODE, ir.gpu_opcode)
-
-    def flush(self):
-        pass
 
     def gpu_mem_get(self, addr: int32) -> ImageBuffer:
         if 0 <= addr < constants.GPU_MEMORY_SIZE and addr < len(self.processor.sprites):
@@ -149,6 +146,7 @@ class ProcessorError(Exception):
 
 class ProcessorEvent(Enum):
     PRINT = 'print'
+    GFLUSH = 'gflush'
 
     def post(self, proc: 'Processor', arg: Any):
         proc.event_handle(proc, self, arg)

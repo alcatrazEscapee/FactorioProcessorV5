@@ -242,7 +242,6 @@ def format_frequency(hz: float) -> str:
 
 def manage_processor(proc: Processor, period_ns: int, raw: Connection):
     pipe = ConnectionManager(raw)
-    proc.gpu = AppGPU(proc, pipe)
     keyboard = AppControlDevice()
     proc.devices.append(keyboard)
     proc.event_handle = AppEventHandle(pipe)
@@ -289,16 +288,6 @@ def manage_processor(proc: Processor, period_ns: int, raw: Connection):
     pipe.send('halt')
 
 
-class AppGPU(GPU):
-
-    def __init__(self, proc: Processor, pipe: ConnectionManager):
-        super().__init__(proc)
-        self.pipe = pipe
-
-    def flush(self):
-        self.pipe.send(P2C_SCREEN, self.screen)
-
-
 class AppControlDevice(Device):
 
     def __init__(self):
@@ -316,6 +305,8 @@ class AppEventHandle:
     def __call__(self, proc: Processor, event_type: ProcessorEvent, arg: Any):
         if event_type == ProcessorEvent.PRINT:
             self.pipe.send(P2C_PRINT, arg)
+        elif event_type == ProcessorEvent.GFLUSH:
+            self.pipe.send(P2C_SCREEN, arg)
 
 
 if __name__ == '__main__':

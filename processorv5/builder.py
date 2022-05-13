@@ -12,6 +12,7 @@ import blueprint
 IntLike = Union[IntEnum, int]
 
 SIGNALS_32BIT = ['wooden-chest', 'iron-chest', 'steel-chest', 'storage-tank', 'transport-belt', 'fast-transport-belt', 'express-transport-belt', 'underground-belt', 'fast-underground-belt', 'express-underground-belt', 'splitter', 'fast-splitter', 'express-splitter', 'burner-inserter', 'inserter', 'long-handed-inserter', 'fast-inserter', 'filter-inserter', 'stack-inserter', 'stack-filter-inserter', 'small-electric-pole', 'medium-electric-pole', 'big-electric-pole', 'substation', 'pipe', 'pipe-to-ground', 'pump', 'rail', 'train-stop', 'rail-signal', 'rail-chain-signal', 'locomotive']
+SIGNALS_80 = ['wooden-chest', 'iron-chest', 'steel-chest', 'storage-tank', 'transport-belt', 'fast-transport-belt', 'express-transport-belt', 'underground-belt', 'fast-underground-belt', 'express-underground-belt', 'splitter', 'fast-splitter', 'express-splitter', 'burner-inserter', 'inserter', 'long-handed-inserter', 'fast-inserter', 'filter-inserter', 'stack-inserter', 'stack-filter-inserter', 'small-electric-pole', 'medium-electric-pole', 'big-electric-pole', 'substation', 'pipe', 'pipe-to-ground', 'pump', 'rail', 'train-stop', 'rail-signal', 'rail-chain-signal', 'locomotive', 'cargo-wagon', 'fluid-wagon', 'artillery-wagon', 'car', 'tank', 'spidertron', 'spidertron-remote', 'logistic-robot', 'construction-robot', 'logistic-chest-active-provider', 'logistic-chest-passive-provider', 'logistic-chest-storage', 'logistic-chest-buffer', 'logistic-chest-requester', 'roboport', 'small-lamp', 'red-wire', 'green-wire', 'arithmetic-combinator', 'decider-combinator', 'constant-combinator', 'power-switch', 'programmable-speaker', 'stone-brick', 'concrete', 'hazard-concrete', 'refined-concrete', 'refined-hazard-concrete', 'landfill', 'cliff-explosives', 'repair-pack', 'blueprint', 'deconstruction-planner', 'upgrade-planner', 'blueprint-book', 'boiler', 'steam-engine', 'solar-panel', 'accumulator', 'nuclear-reactor', 'heat-pipe', 'heat-exchanger', 'steam-turbine', 'burner-mining-drill', 'electric-mining-drill', 'offshore-pump', 'pumpjack', 'stone-furnace']
 
 TWO_OPERAND = {'W': 1, 'X': ALUInputCode.A, 'Y': ALUInputCode.B}
 OPERAND_IMMEDIATE = {'W': 1, 'X': ALUInputCode.B, 'Y': ALUInputCode.IMMEDIATE}
@@ -95,9 +96,11 @@ GPU_INSTRUCTIONS: Dict[GPUInstruction, Dict[str, IntLike]] = {
 def main():
     # build_signals_32bit()
     # build_gpu_image_decoder()
-    build_control_unit()
+    # build_control_unit()
     # build_gpu_control_unit()
     # build_gpu_screen_encoder()
+    build_color_lights_row()
+    # build_signals_80_wide()
     print('Done')
 
 
@@ -232,6 +235,25 @@ def build_gpu_screen_encoder():
         assert control['second_constant'] == int32(1) << int32(x)
 
 
+def build_color_lights_row():
+    obj = decode('prototype_color_lights_row')
+    index = partition(obj)
+    for i in range(80):
+        lhs, ac, rhs = index[i * 3, 0], index[i * 3 + 1, 1], index[i * 3 + 2, 0]
+
+        assert lhs['name'] == 'small-lamp'
+        assert ac['name'] == 'arithmetic-combinator'
+        assert rhs['name'] == 'small-lamp'
+
+        signal = SIGNALS_80[i]
+
+        lhs['control_behavior']['circuit_condition']['first_signal']['name'] = signal
+        ac['control_behavior']['arithmetic_conditions']['second_signal']['name'] = signal
+        rhs['control_behavior']['circuit_condition']['first_signal']['name'] = signal
+
+    encode('color_lights_row', obj)
+
+
 def build_signals_32bit():
     obj = decode('lights_column')
     index: Dict[Tuple[int, int], Any] = partition(obj)
@@ -242,6 +264,14 @@ def build_signals_32bit():
         assert control['type'] == 'item'
         signals.append(control['name'])
     print(signals)
+
+def build_signals_80_wide():
+    obj = decode('dual_rom')
+    index = partition(obj)
+    x = []
+    for i in range(4):
+        x += [index[0, i]['control_behavior']['filters'][j]['signal']['name'] for j in range(20)]
+    print(x)
 
 
 def constant_signal(letter: str, count: IntLike, index: int):
